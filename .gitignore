@@ -1,0 +1,31 @@
+# Xcode
+.DS_Store
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+*.xccheckout
+*.moved-aside
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# CocoaPods (not used but just in case)
+Pods/
+
+# Carthage (not used but just in case)
+Carthage/Build/
+
+# IDE
+*.idea/
+*.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

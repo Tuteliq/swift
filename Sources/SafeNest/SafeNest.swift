@@ -392,9 +392,10 @@ public final class SafeNest: @unchecked Sendable {
         // Extract metadata from headers
         lastRequestId = httpResponse.value(forHTTPHeaderField: "X-Request-ID")
 
-        if let limit = httpResponse.value(forHTTPHeaderField: "X-Usage-Limit").flatMap(Int.init),
-           let used = httpResponse.value(forHTTPHeaderField: "X-Usage-Used").flatMap(Int.init),
-           let remaining = httpResponse.value(forHTTPHeaderField: "X-Usage-Remaining").flatMap(Int.init) {
+        // Monthly usage headers
+        if let limit = httpResponse.value(forHTTPHeaderField: "X-Monthly-Limit").flatMap(Int.init),
+           let used = httpResponse.value(forHTTPHeaderField: "X-Monthly-Used").flatMap(Int.init),
+           let remaining = httpResponse.value(forHTTPHeaderField: "X-Monthly-Remaining").flatMap(Int.init) {
             usage = Usage(limit: limit, used: used, remaining: remaining)
         }
 

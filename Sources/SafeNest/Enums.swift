@@ -1,6 +1,6 @@
 import Foundation
 
-/// Severity levels for detected content
+/// Severity levels for detected content.
 public enum Severity: String, Codable, Sendable {
     case low
     case medium
@@ -8,7 +8,7 @@ public enum Severity: String, Codable, Sendable {
     case critical
 }
 
-/// Grooming risk levels
+/// Grooming risk levels.
 public enum GroomingRisk: String, Codable, Sendable {
     case none
     case low
@@ -17,7 +17,7 @@ public enum GroomingRisk: String, Codable, Sendable {
     case critical
 }
 
-/// Overall risk levels
+/// Overall risk levels.
 public enum RiskLevel: String, Codable, Sendable {
     case safe
     case low
@@ -26,24 +26,50 @@ public enum RiskLevel: String, Codable, Sendable {
     case critical
 }
 
-/// Emotion trend direction
+/// Emotion trend direction.
 public enum EmotionTrend: String, Codable, Sendable {
     case improving
     case stable
     case worsening
 }
 
-/// Target audience for action plans
+/// Target audience for action plans.
+///
+/// Maps to the API `role` field on `POST /api/v1/guidance/action-plan`.
 public enum Audience: String, Codable, Sendable {
     case child
     case parent
-    case educator
     case platform
 }
 
-/// Message role in conversations
+/// Message role in grooming detection conversations.
 public enum MessageRole: String, Codable, Sendable {
     case adult
     case child
     case unknown
+}
+
+/// Analysis types for batch and quick analysis.
+public enum AnalysisType: String, Codable, Sendable {
+    case bullying
+    case unsafe
+    case grooming
+    case emotions
+}
+
+/// Recommended actions after analysis.
+public enum RecommendedAction: String, Codable, Sendable {
+    case none
+    case monitor
+    case flagForModerator = "flag_for_moderator"
+    case immediateIntervention = "immediate_intervention"
+}
+
+/// Webhook event types for notification subscriptions.
+public enum WebhookEventType: String, Codable, Sendable {
+    case incidentCritical = "incident.critical"
+    case incidentHigh = "incident.high"
+    case groomingDetected = "grooming.detected"
+    case selfHarmDetected = "self_harm.detected"
+    case bullyingSevere = "bullying.severe"
 }

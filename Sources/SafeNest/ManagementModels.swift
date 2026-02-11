@@ -481,3 +481,29 @@ public struct PricingDetailPlan: Codable, Sendable {
 public struct PricingDetailsResult: Codable, Sendable {
     public let plans: [PricingDetailPlan]
 }
+
+// MARK: - Account Management (GDPR)
+
+/// Result from `DELETE /api/v1/account/data` (GDPR Article 17 — Right to Erasure).
+public struct AccountDeletionResult: Codable, Sendable {
+    public let message: String
+    public let deletedCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case message
+        case deletedCount = "deleted_count"
+    }
+}
+
+/// Result from `GET /api/v1/account/export` (GDPR Article 20 — Right to Data Portability).
+public struct AccountExportResult: Codable, Sendable {
+    public let userId: String
+    public let exportedAt: String
+    public let data: [String: [AnyCodable]]
+
+    private enum CodingKeys: String, CodingKey {
+        case userId
+        case exportedAt
+        case data
+    }
+}

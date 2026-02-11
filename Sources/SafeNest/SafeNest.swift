@@ -533,6 +533,22 @@ public final class SafeNest: @unchecked Sendable {
         try await request(method: "GET", path: "/api/v1/pricing/details")
     }
 
+    // MARK: - Account Management (GDPR)
+
+    /// Delete all account data (GDPR Article 17 — Right to Erasure).
+    ///
+    /// - Returns: Confirmation with the number of deleted records.
+    public func deleteAccountData() async throws -> AccountDeletionResult {
+        try await request(method: "DELETE", path: "/api/v1/account/data")
+    }
+
+    /// Export all account data as JSON (GDPR Article 20 — Right to Data Portability).
+    ///
+    /// - Returns: Full data export grouped by collection.
+    public func exportAccountData() async throws -> AccountExportResult {
+        try await request(method: "GET", path: "/api/v1/account/export")
+    }
+
     // MARK: - Private Helpers
 
     private func contextPayload(_ context: AnalysisContext) -> ContextPayload {

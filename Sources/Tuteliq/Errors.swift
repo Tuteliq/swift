@@ -1,13 +1,13 @@
 import Foundation
 
-/// Errors returned by the SafeNest SDK.
+/// Errors returned by the Tuteliq SDK.
 ///
-/// All API methods throw ``SafeNestError`` on failure. Use pattern matching
+/// All API methods throw ``TuteliqError`` on failure. Use pattern matching
 /// to handle specific error cases:
 /// ```swift
 /// do {
-///     let result = try await safenest.detectBullying(content: text)
-/// } catch let error as SafeNestError {
+///     let result = try await tuteliq.detectBullying(content: text)
+/// } catch let error as TuteliqError {
 ///     switch error {
 ///     case .rateLimitError:
 ///         // Back off and retry later
@@ -18,7 +18,7 @@ import Foundation
 ///     }
 /// }
 /// ```
-public enum SafeNestError: Error, LocalizedError, Sendable {
+public enum TuteliqError: Error, LocalizedError, Sendable {
     /// API key is missing or invalid (HTTP 401).
     case authenticationError(String)
 

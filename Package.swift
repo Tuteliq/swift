@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "SafeNest",
+    name: "Tuteliq",
     platforms: [
         .iOS(.v15),
         .macOS(.v12),
@@ -12,20 +12,20 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "SafeNest",
-            targets: ["SafeNest"]
+            name: "Tuteliq",
+            targets: ["Tuteliq"]
         ),
     ],
     targets: [
         .target(
-            name: "SafeNest",
+            name: "Tuteliq",
             dependencies: [],
-            path: "Sources/SafeNest"
+            path: "Sources/Tuteliq"
         ),
         .testTarget(
-            name: "SafeNestTests",
-            dependencies: ["SafeNest"],
-            path: "Tests/SafeNestTests"
+            name: "TuteliqTests",
+            dependencies: ["Tuteliq"],
+            path: "Tests/TuteliqTests"
         ),
     ],
     swiftLanguageVersions: [.v5]

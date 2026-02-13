@@ -507,3 +507,239 @@ public struct AccountExportResult: Codable, Sendable {
         case data
     }
 }
+
+// MARK: - Consent Management (GDPR Article 7)
+
+/// Types of consent.
+public enum ConsentType: String, Codable, Sendable {
+    case dataProcessing = "data_processing"
+    case analytics = "analytics"
+    case marketing = "marketing"
+    case thirdPartySharing = "third_party_sharing"
+    case childSafetyMonitoring = "child_safety_monitoring"
+}
+
+/// Consent status values.
+public enum ConsentStatus: String, Codable, Sendable {
+    case granted = "granted"
+    case withdrawn = "withdrawn"
+}
+
+/// Input for recording consent.
+public struct RecordConsentInput: Sendable {
+    public var consentType: ConsentType
+    public var version: String
+
+    public init(consentType: ConsentType, version: String) {
+        self.consentType = consentType
+        self.version = version
+    }
+}
+
+/// A consent record.
+public struct ConsentRecord: Codable, Sendable {
+    public let id: String
+    public let userId: String
+    public let consentType: String
+    public let status: String
+    public let version: String
+    public let createdAt: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case consentType = "consent_type"
+        case status
+        case version
+        case createdAt = "created_at"
+    }
+}
+
+/// Result from consent record/withdraw operations.
+public struct ConsentActionResult: Codable, Sendable {
+    public let message: String
+    public let consent: ConsentRecord
+}
+
+/// Result from consent status query.
+public struct ConsentStatusResult: Codable, Sendable {
+    public let consents: [ConsentRecord]
+}
+
+// MARK: - Right to Rectification (GDPR Article 16)
+
+/// Input for data rectification.
+public struct RectifyDataInput: Sendable {
+    public var collection: String
+    public var documentId: String
+    public var fields: [String: AnyCodable]
+
+    public init(collection: String, documentId: String, fields: [String: AnyCodable]) {
+        self.collection = collection
+        self.documentId = documentId
+        self.fields = fields
+    }
+}
+
+/// Result from data rectification.
+public struct RectifyDataResult: Codable, Sendable {
+    public let message: String
+    public let updatedFields: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case message
+        case updatedFields = "updated_fields"
+    }
+}
+
+// MARK: - Audit Logs (GDPR Article 15)
+
+/// Types of auditable actions.
+public enum AuditAction: String, Codable, Sendable {
+    case dataAccess = "data_access"
+    case dataExport = "data_export"
+    case dataDeletion = "data_deletion"
+    case dataRectification = "data_rectification"
+    case consentGranted = "consent_granted"
+    case consentWithdrawn = "consent_withdrawn"
+    case breachNotification = "breach_notification"
+}
+
+/// An audit log entry.
+public struct AuditLogEntry: Codable, Sendable {
+    public let id: String
+    public let userId: String
+    public let action: String
+    public let details: AnyCodable?
+    public let createdAt: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case action
+        case details
+        case createdAt = "created_at"
+    }
+}
+
+/// Result from audit logs query.
+public struct AuditLogsResult: Codable, Sendable {
+    public let auditLogs: [AuditLogEntry]
+
+    private enum CodingKeys: String, CodingKey {
+        case auditLogs = "audit_logs"
+    }
+}
+
+// MARK: - Breach Management (GDPR Article 33/34)
+
+/// Breach severity levels.
+public enum BreachSeverity: String, Codable, Sendable {
+    case low = "low"
+    case medium = "medium"
+    case high = "high"
+    case critical = "critical"
+}
+
+/// Breach status values.
+public enum BreachStatus: String, Codable, Sendable {
+    case detected = "detected"
+    case investigating = "investigating"
+    case contained = "contained"
+    case reported = "reported"
+    case resolved = "resolved"
+}
+
+/// Breach notification status values.
+public enum BreachNotificationStatus: String, Codable, Sendable {
+    case pending = "pending"
+    case usersNotified = "users_notified"
+    case dpaNotified = "dpa_notified"
+    case completed = "completed"
+}
+
+/// Input for logging a new data breach.
+public struct LogBreachInput: Sendable {
+    public var title: String
+    public var description: String
+    public var severity: BreachSeverity
+    public var affectedUserIds: [String]
+    public var dataCategories: [String]
+    public var reportedBy: String
+
+    public init(
+        title: String,
+        description: String,
+        severity: BreachSeverity,
+        affectedUserIds: [String],
+        dataCategories: [String],
+        reportedBy: String
+    ) {
+        self.title = title
+        self.description = description
+        self.severity = severity
+        self.affectedUserIds = affectedUserIds
+        self.dataCategories = dataCategories
+        self.reportedBy = reportedBy
+    }
+}
+
+/// Input for updating a breach.
+public struct UpdateBreachInput: Sendable {
+    public var status: BreachStatus
+    public var notificationStatus: BreachNotificationStatus?
+    public var notes: String?
+
+    public init(
+        status: BreachStatus,
+        notificationStatus: BreachNotificationStatus? = nil,
+        notes: String? = nil
+    ) {
+        self.status = status
+        self.notificationStatus = notificationStatus
+        self.notes = notes
+    }
+}
+
+/// A breach record.
+public struct BreachRecord: Codable, Sendable {
+    public let id: String
+    public let title: String
+    public let description: String
+    public let severity: String
+    public let status: String
+    public let notificationStatus: String
+    public let affectedUserIds: [String]
+    public let dataCategories: [String]
+    public let reportedBy: String
+    public let notificationDeadline: String
+    public let createdAt: String
+    public let updatedAt: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, description, severity, status
+        case notificationStatus = "notification_status"
+        case affectedUserIds = "affected_user_ids"
+        case dataCategories = "data_categories"
+        case reportedBy = "reported_by"
+        case notificationDeadline = "notification_deadline"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// Result from logging a breach.
+public struct LogBreachResult: Codable, Sendable {
+    public let message: String
+    public let breach: BreachRecord
+}
+
+/// Result from listing breaches.
+public struct BreachListResult: Codable, Sendable {
+    public let breaches: [BreachRecord]
+}
+
+/// Result from getting/updating a breach.
+public struct BreachResult: Codable, Sendable {
+    public let breach: BreachRecord
+}

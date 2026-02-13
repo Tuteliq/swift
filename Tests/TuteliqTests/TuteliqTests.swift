@@ -1,5 +1,5 @@
 import XCTest
-@testable import SafeNest
+@testable import Tuteliq
 
 // MARK: - Mock URLProtocol
 
@@ -29,17 +29,17 @@ final class MockURLProtocol: URLProtocol {
 
 // MARK: - Test Helpers
 
-extension SafeNestTests {
+extension TuteliqTests {
     func makeClient(
         maxRetries: Int = 3,
         cacheTTL: TimeInterval = 0,
         handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
-    ) throws -> SafeNest {
+    ) throws -> Tuteliq {
         MockURLProtocol.requestHandler = handler
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: config)
-        return try SafeNest(
+        return try Tuteliq(
             apiKey: "test-api-key-12345",
             maxRetries: maxRetries,
             cacheTTL: cacheTTL,
@@ -59,7 +59,7 @@ extension SafeNestTests {
         var allHeaders = headers
         allHeaders["Content-Type"] = "application/json"
         let response = HTTPURLResponse(
-            url: URL(string: "https://api.safenest.dev")!,
+            url: URL(string: "https://api.tuteliq.ai")!,
             statusCode: statusCode,
             httpVersion: nil,
             headerFields: allHeaders
@@ -70,19 +70,19 @@ extension SafeNestTests {
 
 // MARK: - Tests
 
-final class SafeNestTests: XCTestCase {
+final class TuteliqTests: XCTestCase {
 
     // MARK: - Initialization
 
     func testInitialization() throws {
-        let client = try SafeNest(apiKey: "test-api-key-12345")
+        let client = try Tuteliq(apiKey: "test-api-key-12345")
         XCTAssertNotNil(client)
     }
 
     func testInitializationWithCustomOptions() throws {
-        let client = try SafeNest(
+        let client = try Tuteliq(
             apiKey: "test-api-key-12345",
-            baseURL: "https://staging.safenest.dev",
+            baseURL: "https://staging.tuteliq.ai",
             timeout: 60,
             maxRetries: 5,
             retryDelay: 2
@@ -91,8 +91,8 @@ final class SafeNestTests: XCTestCase {
     }
 
     func testInitializationThrowsOnEmptyKey() {
-        XCTAssertThrowsError(try SafeNest(apiKey: "")) { error in
-            guard case SafeNestError.validationError(let msg, _) = error else {
+        XCTAssertThrowsError(try Tuteliq(apiKey: "")) { error in
+            guard case TuteliqError.validationError(let msg, _) = error else {
                 XCTFail("Expected validationError, got \(error)")
                 return
             }
@@ -101,8 +101,8 @@ final class SafeNestTests: XCTestCase {
     }
 
     func testInitializationThrowsOnShortKey() {
-        XCTAssertThrowsError(try SafeNest(apiKey: "short")) { error in
-            guard case SafeNestError.validationError(let msg, _) = error else {
+        XCTAssertThrowsError(try Tuteliq(apiKey: "short")) { error in
+            guard case TuteliqError.validationError(let msg, _) = error else {
                 XCTFail("Expected validationError, got \(error)")
                 return
             }
@@ -111,8 +111,8 @@ final class SafeNestTests: XCTestCase {
     }
 
     func testInitializationThrowsOnInvalidBaseURL() {
-        XCTAssertThrowsError(try SafeNest(apiKey: "test-api-key-12345", baseURL: "")) { error in
-            guard case SafeNestError.validationError = error else {
+        XCTAssertThrowsError(try Tuteliq(apiKey: "test-api-key-12345", baseURL: "")) { error in
+            guard case TuteliqError.validationError = error else {
                 XCTFail("Expected validationError, got \(error)")
                 return
             }
@@ -350,7 +350,7 @@ final class SafeNestTests: XCTestCase {
     // MARK: - Error Descriptions
 
     func testErrorDescriptions() {
-        let errors: [(SafeNestError, String)] = [
+        let errors: [(TuteliqError, String)] = [
             (.authenticationError("Invalid key"), "Authentication Error: Invalid key"),
             (.rateLimitError("Slow down"), "Rate Limit Error: Slow down"),
             (.validationError("Bad input"), "Validation Error: Bad input"),
@@ -418,7 +418,7 @@ final class SafeNestTests: XCTestCase {
         do {
             _ = try await client.detectBullying(content: "test")
             XCTFail("Should have thrown")
-        } catch let error as SafeNestError {
+        } catch let error as TuteliqError {
             guard case .authenticationError(let msg) = error else {
                 XCTFail("Expected authenticationError, got \(error)")
                 return
@@ -440,7 +440,7 @@ final class SafeNestTests: XCTestCase {
         do {
             _ = try await client.analyzeEmotions(content: "test")
             XCTFail("Should have thrown")
-        } catch let error as SafeNestError {
+        } catch let error as TuteliqError {
             guard case .subscriptionError(let msg, let code) = error else {
                 XCTFail("Expected subscriptionError, got \(error)")
                 return
@@ -463,7 +463,7 @@ final class SafeNestTests: XCTestCase {
         do {
             _ = try await client.detectBullying(content: "test")
             XCTFail("Should have thrown")
-        } catch let error as SafeNestError {
+        } catch let error as TuteliqError {
             guard case .rateLimitError = error else {
                 XCTFail("Expected rateLimitError, got \(error)")
                 return
@@ -485,7 +485,7 @@ final class SafeNestTests: XCTestCase {
         do {
             _ = try await client.detectBullying(content: "test")
             XCTFail("Should have thrown")
-        } catch let error as SafeNestError {
+        } catch let error as TuteliqError {
             guard case .validationError(_, let details) = error else {
                 XCTFail("Expected validationError, got \(error)")
                 return
@@ -507,7 +507,7 @@ final class SafeNestTests: XCTestCase {
         do {
             _ = try await client.detectBullying(content: "test")
             XCTFail("Should have thrown")
-        } catch let error as SafeNestError {
+        } catch let error as TuteliqError {
             guard case .serverError(_, let statusCode) = error else {
                 XCTFail("Expected serverError, got \(error)")
                 return

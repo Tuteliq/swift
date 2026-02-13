@@ -1,15 +1,15 @@
 import Foundation
 
-/// SafeNest — AI-powered child safety analysis SDK.
+/// Tuteliq — AI-powered child safety analysis SDK.
 ///
-/// The primary interface for the SafeNest API. Provides methods for detecting
+/// The primary interface for the Tuteliq API. Provides methods for detecting
 /// bullying, grooming, and unsafe content, as well as emotion analysis,
 /// guidance, reports, and platform management.
 ///
 /// ```swift
-/// let safenest = try SafeNest(apiKey: "your-api-key")
+/// let tuteliq = try Tuteliq(apiKey: "your-api-key")
 ///
-/// let result = try await safenest.detectBullying(content: "message text")
+/// let result = try await tuteliq.detectBullying(content: "message text")
 /// if result.isBullying {
 ///     print("Severity: \(result.severity)")
 /// }
@@ -18,7 +18,7 @@ import Foundation
 /// All API methods are `async` and the client is thread-safe. It can be shared
 /// across tasks and actors. Metadata properties (`usage`, `lastRequestId`,
 /// `lastLatency`, `rateLimitInfo`) reflect the most recently completed request.
-public final class SafeNest: @unchecked Sendable {
+public final class Tuteliq: @unchecked Sendable {
 
     // MARK: - Properties
 
@@ -85,20 +85,20 @@ public final class SafeNest: @unchecked Sendable {
 
     // MARK: - Initialization
 
-    /// Creates a new SafeNest client.
+    /// Creates a new Tuteliq client.
     ///
     /// - Parameters:
-    ///   - apiKey: Your SafeNest API key (minimum 10 characters).
-    ///   - baseURL: Custom API base URL (defaults to `https://api.safenest.dev`).
+    ///   - apiKey: Your Tuteliq API key (minimum 10 characters).
+    ///   - baseURL: Custom API base URL (defaults to `https://api.tuteliq.ai`).
     ///   - timeout: Request timeout in seconds (default: 30).
     ///   - maxRetries: Number of retry attempts for transient failures (default: 3).
     ///   - retryDelay: Initial retry delay in seconds, doubled each attempt (default: 1).
     ///   - cacheTTL: Time-to-live for GET response cache in seconds (default: 0 = disabled).
     ///   - session: Custom `URLSession` for advanced configuration or testing.
-    /// - Throws: ``SafeNestError/validationError(_:details:)`` if the API key is empty or too short.
+    /// - Throws: ``TuteliqError/validationError(_:details:)`` if the API key is empty or too short.
     public init(
         apiKey: String,
-        baseURL: String = "https://api.safenest.dev",
+        baseURL: String = "https://api.tuteliq.ai",
         timeout: TimeInterval = 30,
         maxRetries: Int = 3,
         retryDelay: TimeInterval = 1,
@@ -106,13 +106,13 @@ public final class SafeNest: @unchecked Sendable {
         session: URLSession? = nil
     ) throws {
         guard !apiKey.isEmpty else {
-            throw SafeNestError.validationError("API key is required")
+            throw TuteliqError.validationError("API key is required")
         }
         guard apiKey.count >= 10 else {
-            throw SafeNestError.validationError("API key appears to be invalid (too short)")
+            throw TuteliqError.validationError("API key appears to be invalid (too short)")
         }
         guard let url = URL(string: baseURL) else {
-            throw SafeNestError.validationError("Invalid base URL: \(baseURL)")
+            throw TuteliqError.validationError("Invalid base URL: \(baseURL)")
         }
 
         self.apiKey = apiKey
@@ -138,7 +138,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: The bullying detection input.
     /// - Returns: Analysis result with severity, risk score, and recommended action.
-    /// - Throws: ``SafeNestError`` on failure.
+    /// - Throws: ``TuteliqError`` on failure.
     public func detectBullying(_ input: DetectBullyingInput) async throws -> BullyingResult {
         let body = BullyingRequest(
             text: input.content,
@@ -164,7 +164,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: The grooming detection input with conversation messages.
     /// - Returns: Analysis result with grooming risk level and identified flags.
-    /// - Throws: ``SafeNestError`` on failure.
+    /// - Throws: ``TuteliqError`` on failure.
     public func detectGrooming(_ input: DetectGroomingInput) async throws -> GroomingResult {
         var ctx = input.context.map(contextPayload) ?? ContextPayload()
         if let childAge = input.childAge { ctx.childAge = childAge }
@@ -182,7 +182,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: The unsafe content detection input.
     /// - Returns: Analysis result with categories, severity, and risk score.
-    /// - Throws: ``SafeNestError`` on failure.
+    /// - Throws: ``TuteliqError`` on failure.
     public func detectUnsafe(_ input: DetectUnsafeInput) async throws -> UnsafeResult {
         let body = UnsafeRequest(
             text: input.content,
@@ -208,7 +208,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: Combined analysis input.
     /// - Returns: Merged result with overall risk level and individual results.
-    /// - Throws: ``SafeNestError`` on failure.
+    /// - Throws: ``TuteliqError`` on failure.
     public func analyze(_ input: AnalyzeInput) async throws -> AnalyzeResult {
         let include = input.include ?? [.bullying, .unsafe]
         let metadataRaw = input.metadata?.mapValues { $0.value }
@@ -285,7 +285,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: Emotion analysis input (single text or message array).
     /// - Returns: Dominant emotions, scores, trend, and followup recommendation.
-    /// - Throws: ``SafeNestError`` on failure.
+    /// - Throws: ``TuteliqError`` on failure.
     public func analyzeEmotions(_ input: AnalyzeEmotionsInput) async throws -> EmotionsResult {
         let messages: [EmotionMessagePayload]
         if let content = input.content {
@@ -316,7 +316,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: Action plan input with situation and target audience.
     /// - Returns: Steps, tone, and reading level for the target audience.
-    /// - Throws: ``SafeNestError`` on failure.
+    /// - Throws: ``TuteliqError`` on failure.
     public func getActionPlan(_ input: GetActionPlanInput) async throws -> ActionPlanResult {
         let body = ActionPlanRequest(
             role: (input.audience ?? .parent).rawValue,
@@ -336,7 +336,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: Report input with conversation messages and metadata.
     /// - Returns: Summary, risk level, categories, and next steps.
-    /// - Throws: ``SafeNestError`` on failure.
+    /// - Throws: ``TuteliqError`` on failure.
     public func generateReport(_ input: GenerateReportInput) async throws -> ReportResult {
         let hasMeta = input.childAge != nil || input.incidentType != nil
             || input.conversationId != nil || input.timestampRange != nil
@@ -360,7 +360,7 @@ public final class SafeNest: @unchecked Sendable {
     /// Get current policy configuration.
     ///
     /// - Returns: The active policy configuration.
-    /// - Throws: ``SafeNestError`` on failure. Requires Indie tier or higher.
+    /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
     public func getPolicy() async throws -> PolicyResult {
         try await request(method: "GET", path: "/api/v1/policy")
     }
@@ -369,7 +369,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter config: New policy configuration dictionary.
     /// - Returns: Updated policy configuration.
-    /// - Throws: ``SafeNestError`` on failure. Requires Indie tier or higher.
+    /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
     public func updatePolicy(_ config: [String: AnyCodable]) async throws -> PolicyResult {
         let body = PolicyUpdateRequest(config: config)
         return try await request(method: "PUT", path: "/api/v1/policy", body: body)
@@ -381,7 +381,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// Use ``BatchResultItem/decodeResult(as:)`` to decode typed results:
     /// ```swift
-    /// let batch = try await safenest.batchAnalyze(input)
+    /// let batch = try await tuteliq.batchAnalyze(input)
     /// for item in batch.results where item.success {
     ///     if item.type == "bullying" {
     ///         let result = try item.decodeResult(as: BullyingResult.self)
@@ -391,7 +391,7 @@ public final class SafeNest: @unchecked Sendable {
     ///
     /// - Parameter input: Batch analysis input with typed items.
     /// - Returns: Individual results and a processing summary.
-    /// - Throws: ``SafeNestError`` on failure. Requires Indie tier or higher.
+    /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
     public func batchAnalyze(_ input: BatchAnalyzeInput) async throws -> BatchAnalyzeResult {
         let body = BatchRequest(
             items: input.items.map(encodeBatchItem),
@@ -451,7 +451,7 @@ public final class SafeNest: @unchecked Sendable {
     /// List all webhooks for your account.
     ///
     /// - Returns: Array of webhook configurations.
-    /// - Throws: ``SafeNestError`` on failure. Requires Indie tier or higher.
+    /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
     public func listWebhooks() async throws -> WebhookListResult {
         try await request(method: "GET", path: "/api/v1/webhooks")
     }
@@ -547,6 +547,121 @@ public final class SafeNest: @unchecked Sendable {
     /// - Returns: Full data export grouped by collection.
     public func exportAccountData() async throws -> AccountExportResult {
         try await request(method: "GET", path: "/api/v1/account/export")
+    }
+
+    /// Record user consent (GDPR Article 7).
+    ///
+    /// - Parameter input: Consent type and policy version.
+    /// - Returns: The created consent record.
+    public func recordConsent(_ input: RecordConsentInput) async throws -> ConsentActionResult {
+        try await request(method: "POST", path: "/api/v1/account/consent", body: [
+            "consent_type": input.consentType.rawValue,
+            "version": input.version,
+        ])
+    }
+
+    /// Get current consent status (GDPR Article 7).
+    ///
+    /// - Parameter type: Optional filter by consent type.
+    /// - Returns: List of consent records.
+    public func getConsentStatus(type: ConsentType? = nil) async throws -> ConsentStatusResult {
+        var path = "/api/v1/account/consent"
+        if let type = type {
+            path += "?type=\(type.rawValue)"
+        }
+        return try await request(method: "GET", path: path)
+    }
+
+    /// Withdraw consent (GDPR Article 7.3).
+    ///
+    /// - Parameter type: Type of consent to withdraw.
+    /// - Returns: The withdrawal record.
+    public func withdrawConsent(type: ConsentType) async throws -> ConsentActionResult {
+        try await request(method: "DELETE", path: "/api/v1/account/consent/\(type.rawValue)")
+    }
+
+    /// Rectify user data (GDPR Article 16 — Right to Rectification).
+    ///
+    /// - Parameter input: Collection, document ID, and fields to update.
+    /// - Returns: Confirmation with list of updated fields.
+    public func rectifyData(_ input: RectifyDataInput) async throws -> RectifyDataResult {
+        try await request(method: "PATCH", path: "/api/v1/account/data", body: [
+            "collection": AnyCodable(input.collection),
+            "document_id": AnyCodable(input.documentId),
+            "fields": AnyCodable(input.fields.mapValues { $0.value }),
+        ])
+    }
+
+    /// Get audit logs (GDPR Article 15 — Right of Access).
+    ///
+    /// - Parameters:
+    ///   - action: Optional filter by action type.
+    ///   - limit: Maximum number of results.
+    /// - Returns: List of audit log entries.
+    public func getAuditLogs(action: AuditAction? = nil, limit: Int? = nil) async throws -> AuditLogsResult {
+        var components: [String] = []
+        if let action = action { components.append("action=\(action.rawValue)") }
+        if let limit = limit { components.append("limit=\(limit)") }
+        let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
+        return try await request(method: "GET", path: "/api/v1/account/audit-logs\(query)")
+    }
+
+    // MARK: - Breach Management (GDPR Article 33/34)
+
+    /// Log a new data breach.
+    ///
+    /// - Parameter input: Breach details.
+    /// - Returns: The created breach record.
+    public func logBreach(_ input: LogBreachInput) async throws -> LogBreachResult {
+        try await request(method: "POST", path: "/api/v1/admin/breach", body: [
+            "title": AnyCodable(input.title),
+            "description": AnyCodable(input.description),
+            "severity": AnyCodable(input.severity.rawValue),
+            "affected_user_ids": AnyCodable(input.affectedUserIds),
+            "data_categories": AnyCodable(input.dataCategories),
+            "reported_by": AnyCodable(input.reportedBy),
+        ])
+    }
+
+    /// List data breaches.
+    ///
+    /// - Parameters:
+    ///   - status: Optional filter by breach status.
+    ///   - limit: Maximum number of results.
+    /// - Returns: List of breach records.
+    public func listBreaches(status: BreachStatus? = nil, limit: Int? = nil) async throws -> BreachListResult {
+        var components: [String] = []
+        if let status = status { components.append("status=\(status.rawValue)") }
+        if let limit = limit { components.append("limit=\(limit)") }
+        let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
+        return try await request(method: "GET", path: "/api/v1/admin/breach\(query)")
+    }
+
+    /// Get a single breach by ID.
+    ///
+    /// - Parameter id: Breach ID.
+    /// - Returns: The breach record.
+    public func getBreach(id: String) async throws -> BreachResult {
+        try await request(method: "GET", path: "/api/v1/admin/breach/\(id)")
+    }
+
+    /// Update a breach's status.
+    ///
+    /// - Parameters:
+    ///   - id: Breach ID.
+    ///   - input: Status update details.
+    /// - Returns: The updated breach record.
+    public func updateBreachStatus(id: String, _ input: UpdateBreachInput) async throws -> BreachResult {
+        var body: [String: AnyCodable] = [
+            "status": AnyCodable(input.status.rawValue),
+        ]
+        if let notificationStatus = input.notificationStatus {
+            body["notification_status"] = AnyCodable(notificationStatus.rawValue)
+        }
+        if let notes = input.notes {
+            body["notes"] = AnyCodable(notes)
+        }
+        return try await request(method: "PATCH", path: "/api/v1/admin/breach/\(id)", body: body)
     }
 
     // MARK: - Private Helpers
@@ -693,7 +808,7 @@ public final class SafeNest: @unchecked Sendable {
                 }
 
                 return try decoder.decode(T.self, from: data)
-            } catch let error as SafeNestError {
+            } catch let error as TuteliqError {
                 switch error {
                 case .authenticationError, .validationError, .notFoundError, .subscriptionError:
                     throw error
@@ -712,7 +827,7 @@ public final class SafeNest: @unchecked Sendable {
             }
         }
 
-        throw lastError ?? SafeNestError.unknownError("Request failed after \(maxRetries) attempts")
+        throw lastError ?? TuteliqError.unknownError("Request failed after \(maxRetries) attempts")
     }
 
     private func performRequest(
@@ -722,13 +837,13 @@ public final class SafeNest: @unchecked Sendable {
         query: [URLQueryItem]?
     ) async throws -> Data {
         guard var components = URLComponents(string: baseURL.absoluteString + path) else {
-            throw SafeNestError.unknownError("Invalid URL path: \(path)")
+            throw TuteliqError.unknownError("Invalid URL path: \(path)")
         }
         if let query = query, !query.isEmpty {
             components.queryItems = query
         }
         guard let url = components.url else {
-            throw SafeNestError.unknownError("Failed to construct URL for: \(path)")
+            throw TuteliqError.unknownError("Failed to construct URL for: \(path)")
         }
 
         var urlRequest = URLRequest(url: url)
@@ -748,16 +863,16 @@ public final class SafeNest: @unchecked Sendable {
         } catch let error as URLError {
             switch error.code {
             case .timedOut:
-                throw SafeNestError.timeoutError("Request timed out after \(timeout) seconds")
+                throw TuteliqError.timeoutError("Request timed out after \(timeout) seconds")
             case .notConnectedToInternet, .networkConnectionLost:
-                throw SafeNestError.networkError("No internet connection")
+                throw TuteliqError.networkError("No internet connection")
             default:
-                throw SafeNestError.networkError(error.localizedDescription)
+                throw TuteliqError.networkError(error.localizedDescription)
             }
         }
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            throw SafeNestError.unknownError("Invalid response")
+            throw TuteliqError.unknownError("Invalid response")
         }
 
         updateMetadata(from: httpResponse, latency: Date().timeIntervalSince(startTime))
@@ -768,19 +883,19 @@ public final class SafeNest: @unchecked Sendable {
 
             switch httpResponse.statusCode {
             case 400:
-                throw SafeNestError.validationError(message, details: errorResponse?.error.details)
+                throw TuteliqError.validationError(message, details: errorResponse?.error.details)
             case 401:
-                throw SafeNestError.authenticationError(message)
+                throw TuteliqError.authenticationError(message)
             case 403:
-                throw SafeNestError.subscriptionError(message, code: errorResponse?.error.code)
+                throw TuteliqError.subscriptionError(message, code: errorResponse?.error.code)
             case 404:
-                throw SafeNestError.notFoundError(message)
+                throw TuteliqError.notFoundError(message)
             case 429:
-                throw SafeNestError.rateLimitError(message)
+                throw TuteliqError.rateLimitError(message)
             case 500...:
-                throw SafeNestError.serverError(message, statusCode: httpResponse.statusCode)
+                throw TuteliqError.serverError(message, statusCode: httpResponse.statusCode)
             default:
-                throw SafeNestError.unknownError(message)
+                throw TuteliqError.unknownError(message)
             }
         }
 

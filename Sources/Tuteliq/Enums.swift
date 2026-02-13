@@ -55,6 +55,17 @@ public enum AnalysisType: String, Codable, Sendable {
     case unsafe
     case grooming
     case emotions
+    case voice
+    case image
+}
+
+/// Severity levels that include `none` — used for visual and overall media analysis.
+public enum ContentSeverity: String, Codable, Sendable {
+    case none
+    case low
+    case medium
+    case high
+    case critical
 }
 
 /// Recommended actions after analysis.
@@ -63,6 +74,23 @@ public enum RecommendedAction: String, Codable, Sendable {
     case monitor
     case flagForModerator = "flag_for_moderator"
     case immediateIntervention = "immediate_intervention"
+}
+
+/// Analysis types available for voice/audio analysis.
+public enum VoiceAnalysisType: String, Codable, Sendable {
+    case bullying
+    case unsafe
+    case grooming
+    case emotions
+    case all
+}
+
+/// Analysis types available for image analysis.
+public enum ImageAnalysisType: String, Codable, Sendable {
+    case bullying
+    case unsafe
+    case emotions
+    case all
 }
 
 /// Webhook event types for notification subscriptions.

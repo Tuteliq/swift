@@ -124,6 +124,54 @@ if result.unsafe {
 }
 ```
 
+### Voice Analysis
+
+Transcribe audio and run safety analysis on the transcript:
+
+```swift
+let audioData = try Data(contentsOf: audioURL)
+let result = try await tuteliq.analyzeVoice(
+    AnalyzeVoiceInput(
+        file: audioData,
+        filename: "recording.mp3",
+        analysisType: "all",      // "bullying", "unsafe", "grooming", "emotions", or "all"
+        ageGroup: "11-13"
+    )
+)
+
+print("Transcript: \(result.transcription.text)")
+print("Duration: \(result.transcription.duration)s")
+print("Segments: \(result.transcription.segments.count)")
+print("Risk Score: \(result.overallRiskScore)")   // 0.0 - 1.0
+print("Severity: \(result.overallSeverity)")
+```
+
+Supported audio formats: mp3, wav, m4a, ogg, flac, webm, mp4 (max 25MB).
+
+### Image Analysis
+
+Analyze images for visual safety concerns and extract text via OCR:
+
+```swift
+let imageData = try Data(contentsOf: imageURL)
+let result = try await tuteliq.analyzeImage(
+    AnalyzeImageInput(
+        file: imageData,
+        filename: "screenshot.png",
+        analysisType: "all"       // "bullying", "unsafe", "emotions", or "all"
+    )
+)
+
+print("OCR Text: \(result.vision.extractedText)")
+print("Visual Severity: \(result.vision.visualSeverity)")
+print("Categories: \(result.vision.visualCategories)")
+print("Contains Text: \(result.vision.containsText)")
+print("Risk Score: \(result.overallRiskScore)")
+print("Severity: \(result.overallSeverity)")
+```
+
+Supported image formats: png, jpg, jpeg, gif, webp (max 10MB).
+
 ### Quick Analysis
 
 Runs bullying and unsafe detection in parallel:

@@ -286,7 +286,7 @@ public struct AnalyzeInput: Sendable {
 
 /// Result from combined safety analysis.
 public struct AnalyzeResult: Codable, Sendable {
-    public let riskLevel: String
+    public let riskLevel: RiskLevel
     public let riskScore: Double
     public let summary: String
     public let bullying: BullyingResult?
@@ -295,9 +295,6 @@ public struct AnalyzeResult: Codable, Sendable {
     public let externalId: String?
     public let customerId: String?
     public let metadata: [String: AnyCodable]?
-
-    /// Typed risk level (returns `nil` if the server sends an unrecognized value).
-    public var riskLevelValue: RiskLevel? { RiskLevel(rawValue: riskLevel) }
 
     enum CodingKeys: String, CodingKey {
         case riskLevel = "risk_level"
@@ -512,15 +509,12 @@ public struct GenerateReportInput: Sendable {
 /// Result from incident report generation.
 public struct ReportResult: Codable, Sendable {
     public let summary: String
-    public let riskLevel: String
+    public let riskLevel: RiskLevel
     public let categories: [String]
     public let recommendedNextSteps: [String]
     public let externalId: String?
     public let customerId: String?
     public let metadata: [String: AnyCodable]?
-
-    /// Typed risk level (returns `nil` if the server sends an unrecognized value).
-    public var riskLevelValue: RiskLevel? { RiskLevel(rawValue: riskLevel) }
 
     enum CodingKeys: String, CodingKey {
         case summary, categories
@@ -529,6 +523,229 @@ public struct ReportResult: Codable, Sendable {
         case externalId = "external_id"
         case customerId = "customer_id"
         case metadata
+    }
+}
+
+// MARK: - Voice Analysis
+
+/// A timestamped segment from audio transcription.
+public struct TranscriptionSegment: Codable, Sendable {
+    /// Start time in seconds.
+    public let start: Double
+    /// End time in seconds.
+    public let end: Double
+    /// Transcribed text for this segment.
+    public let text: String
+}
+
+/// Result from audio transcription.
+public struct TranscriptionResult: Codable, Sendable {
+    /// Full transcribed text.
+    public let text: String
+    /// Detected language code.
+    public let language: String
+    /// Audio duration in seconds.
+    public let duration: Double
+    /// Timestamped segments.
+    public let segments: [TranscriptionSegment]
+}
+
+/// Input for voice analysis.
+///
+/// Provide audio file data and an optional analysis type. The SDK handles
+/// multipart encoding and MIME type detection from the filename extension.
+///
+/// ```swift
+/// let audioData = try Data(contentsOf: audioURL)
+/// let input = AnalyzeVoiceInput(file: audioData, filename: "recording.mp3")
+/// let result = try await tuteliq.analyzeVoice(input)
+/// ```
+public struct AnalyzeVoiceInput: Sendable {
+    /// Raw audio file data.
+    public var file: Data
+    /// Filename with extension (used for MIME type detection).
+    public var filename: String
+    /// Analysis type to run on the transcript. Defaults to `.all`.
+    public var analysisType: VoiceAnalysisType?
+    /// Customer-provided file reference echoed in the response.
+    public var fileId: String?
+    /// Age group range (e.g., `"11-13"`).
+    public var ageGroup: String?
+    /// Language code (e.g., `"en"`).
+    public var language: String?
+    /// Platform where the content originated.
+    public var platform: String?
+    /// Age of the child participant.
+    public var childAge: Int?
+    /// Your external correlation ID (max 255 chars).
+    public var externalId: String?
+    /// Multi-tenant customer ID for webhook routing (max 255 chars).
+    public var customerId: String?
+    /// Arbitrary key-value metadata as a JSON string map.
+    public var metadata: [String: String]?
+
+    public init(
+        file: Data,
+        filename: String,
+        analysisType: VoiceAnalysisType? = nil,
+        fileId: String? = nil,
+        ageGroup: String? = nil,
+        language: String? = nil,
+        platform: String? = nil,
+        childAge: Int? = nil,
+        externalId: String? = nil,
+        customerId: String? = nil,
+        metadata: [String: String]? = nil
+    ) {
+        self.file = file
+        self.filename = filename
+        self.analysisType = analysisType
+        self.fileId = fileId
+        self.ageGroup = ageGroup
+        self.language = language
+        self.platform = platform
+        self.childAge = childAge
+        self.externalId = externalId
+        self.customerId = customerId
+        self.metadata = metadata
+    }
+}
+
+/// Result from voice analysis.
+public struct VoiceAnalysisResult: Codable, Sendable {
+    /// Customer-provided file reference.
+    public let fileId: String?
+    /// Transcription with timestamped segments.
+    public let transcription: TranscriptionResult
+    /// Per-type analysis results (keys: `bullying`, `unsafe`, `grooming`, `emotions`).
+    public let analysis: [String: AnyCodable]?
+    /// Overall risk score (0.0–1.0).
+    public let overallRiskScore: Double
+    /// Overall severity level.
+    public let overallSeverity: ContentSeverity
+    /// Echoed external correlation ID.
+    public let externalId: String?
+    /// Echoed customer ID.
+    public let customerId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case fileId = "file_id"
+        case transcription, analysis
+        case overallRiskScore = "overall_risk_score"
+        case overallSeverity = "overall_severity"
+        case externalId = "external_id"
+        case customerId = "customer_id"
+    }
+}
+
+// MARK: - Image Analysis
+
+/// Visual analysis result from image safety classification and OCR.
+public struct VisionResult: Codable, Sendable {
+    /// Text extracted via OCR.
+    public let extractedText: String
+    /// Visual harm categories detected.
+    public let visualCategories: [String]
+    /// Visual content severity.
+    public let visualSeverity: ContentSeverity
+    /// Confidence score (0.0–1.0).
+    public let visualConfidence: Double
+    /// Description of visual content.
+    public let visualDescription: String
+    /// Whether the image contains readable text.
+    public let containsText: Bool
+    /// Whether the image contains faces.
+    public let containsFaces: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case extractedText = "extracted_text"
+        case visualCategories = "visual_categories"
+        case visualSeverity = "visual_severity"
+        case visualConfidence = "visual_confidence"
+        case visualDescription = "visual_description"
+        case containsText = "contains_text"
+        case containsFaces = "contains_faces"
+    }
+}
+
+/// Input for image analysis.
+///
+/// Provide image file data and an optional analysis type. The SDK handles
+/// multipart encoding and MIME type detection from the filename extension.
+///
+/// ```swift
+/// let imageData = try Data(contentsOf: imageURL)
+/// let input = AnalyzeImageInput(file: imageData, filename: "screenshot.png")
+/// let result = try await tuteliq.analyzeImage(input)
+/// ```
+public struct AnalyzeImageInput: Sendable {
+    /// Raw image file data.
+    public var file: Data
+    /// Filename with extension (used for MIME type detection).
+    public var filename: String
+    /// Analysis type to run on extracted text. Defaults to `.all`.
+    public var analysisType: ImageAnalysisType?
+    /// Customer-provided file reference echoed in the response.
+    public var fileId: String?
+    /// Age group range (e.g., `"11-13"`).
+    public var ageGroup: String?
+    /// Platform where the content originated.
+    public var platform: String?
+    /// Your external correlation ID (max 255 chars).
+    public var externalId: String?
+    /// Multi-tenant customer ID for webhook routing (max 255 chars).
+    public var customerId: String?
+    /// Arbitrary key-value metadata as a JSON string map.
+    public var metadata: [String: String]?
+
+    public init(
+        file: Data,
+        filename: String,
+        analysisType: ImageAnalysisType? = nil,
+        fileId: String? = nil,
+        ageGroup: String? = nil,
+        platform: String? = nil,
+        externalId: String? = nil,
+        customerId: String? = nil,
+        metadata: [String: String]? = nil
+    ) {
+        self.file = file
+        self.filename = filename
+        self.analysisType = analysisType
+        self.fileId = fileId
+        self.ageGroup = ageGroup
+        self.platform = platform
+        self.externalId = externalId
+        self.customerId = customerId
+        self.metadata = metadata
+    }
+}
+
+/// Result from image analysis.
+public struct ImageAnalysisResult: Codable, Sendable {
+    /// Customer-provided file reference.
+    public let fileId: String?
+    /// Vision analysis with OCR and visual classification.
+    public let vision: VisionResult
+    /// Per-type text analysis results from extracted OCR text (keys: `bullying`, `unsafe`, `emotions`).
+    public let textAnalysis: [String: AnyCodable]?
+    /// Overall risk score (0.0–1.0).
+    public let overallRiskScore: Double
+    /// Overall severity level.
+    public let overallSeverity: ContentSeverity
+    /// Echoed external correlation ID.
+    public let externalId: String?
+    /// Echoed customer ID.
+    public let customerId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case fileId = "file_id"
+        case vision
+        case textAnalysis = "text_analysis"
+        case overallRiskScore = "overall_risk_score"
+        case overallSeverity = "overall_severity"
+        case externalId = "external_id"
+        case customerId = "customer_id"
     }
 }
 

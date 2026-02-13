@@ -235,13 +235,13 @@ public final class Tuteliq: @unchecked Sendable {
         if let b = bullyingResult { maxRiskScore = max(maxRiskScore, b.riskScore) }
         if let u = unsafeResult { maxRiskScore = max(maxRiskScore, u.riskScore) }
 
-        let riskLevel: String
+        let riskLevel: RiskLevel
         switch maxRiskScore {
-        case 0.9...: riskLevel = RiskLevel.critical.rawValue
-        case 0.7..<0.9: riskLevel = RiskLevel.high.rawValue
-        case 0.5..<0.7: riskLevel = RiskLevel.medium.rawValue
-        case 0.3..<0.5: riskLevel = RiskLevel.low.rawValue
-        default: riskLevel = RiskLevel.safe.rawValue
+        case 0.9...: riskLevel = .critical
+        case 0.7..<0.9: riskLevel = .high
+        case 0.5..<0.7: riskLevel = .medium
+        case 0.3..<0.5: riskLevel = .low
+        default: riskLevel = .safe
         }
 
         var findings: [String] = []
@@ -515,6 +515,90 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: The new signing secret.
     public func regenerateWebhookSecret(id: String) async throws -> RegenerateSecretResult {
         try await request(method: "POST", path: "/api/v1/webhooks/\(id)/regenerate-secret")
+    }
+
+    // MARK: - Media Analysis
+
+    /// Analyze audio content for safety concerns.
+    ///
+    /// Transcribes audio via Whisper and runs the specified safety analyses
+    /// on the transcript. Supported formats: mp3, wav, m4a, ogg, flac, webm, mp4.
+    ///
+    /// ```swift
+    /// let audioData = try Data(contentsOf: audioURL)
+    /// let input = AnalyzeVoiceInput(file: audioData, filename: "recording.mp3")
+    /// let result = try await tuteliq.analyzeVoice(input)
+    /// print(result.transcription.text)
+    /// print("Risk: \(result.overallRiskScore)")
+    /// ```
+    ///
+    /// - Parameter input: Voice analysis input with audio file data.
+    /// - Returns: Transcription with safety analysis results.
+    /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
+    public func analyzeVoice(_ input: AnalyzeVoiceInput) async throws -> VoiceAnalysisResult {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+
+        let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
+        body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
+
+        if let v = input.analysisType { body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue) }
+        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
+        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
+        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
+        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
+        if let v = input.language { body.appendMultipartField(boundary: boundary, name: "language", value: v) }
+        if let v = input.platform { body.appendMultipartField(boundary: boundary, name: "platform", value: v) }
+        if let v = input.childAge { body.appendMultipartField(boundary: boundary, name: "child_age", value: "\(v)") }
+        if let metadata = input.metadata,
+           let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            body.appendMultipartField(boundary: boundary, name: "metadata", value: jsonString)
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        return try await multipartRequest(path: "/api/v1/safety/voice", body: body, boundary: boundary)
+    }
+
+    /// Analyze image content for safety concerns.
+    ///
+    /// Uses vision AI for visual classification and OCR text extraction,
+    /// then runs safety analyses on any extracted text. Supported formats: png, jpg, jpeg, gif, webp.
+    ///
+    /// ```swift
+    /// let imageData = try Data(contentsOf: imageURL)
+    /// let input = AnalyzeImageInput(file: imageData, filename: "screenshot.png")
+    /// let result = try await tuteliq.analyzeImage(input)
+    /// print(result.vision.extractedText)
+    /// print("Risk: \(result.overallRiskScore)")
+    /// ```
+    ///
+    /// - Parameter input: Image analysis input with image file data.
+    /// - Returns: Vision analysis with optional text safety results.
+    /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
+    public func analyzeImage(_ input: AnalyzeImageInput) async throws -> ImageAnalysisResult {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+
+        let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
+        body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
+
+        if let v = input.analysisType { body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue) }
+        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
+        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
+        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
+        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
+        if let v = input.platform { body.appendMultipartField(boundary: boundary, name: "platform", value: v) }
+        if let metadata = input.metadata,
+           let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            body.appendMultipartField(boundary: boundary, name: "metadata", value: jsonString)
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        return try await multipartRequest(path: "/api/v1/safety/image", body: body, boundary: boundary)
     }
 
     // MARK: - Pricing
@@ -900,6 +984,142 @@ public final class Tuteliq: @unchecked Sendable {
         }
 
         return data
+    }
+
+    // MARK: - Multipart Request
+
+    private func multipartRequest<T: Decodable>(
+        path: String,
+        body: Data,
+        boundary: String
+    ) async throws -> T {
+        var lastError: Error?
+
+        for attempt in 0..<maxRetries {
+            try Task.checkCancellation()
+
+            do {
+                let data = try await performMultipartRequest(path: path, body: body, boundary: boundary)
+                return try decoder.decode(T.self, from: data)
+            } catch let error as TuteliqError {
+                switch error {
+                case .authenticationError, .validationError, .notFoundError, .subscriptionError:
+                    throw error
+                default:
+                    lastError = error
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+            }
+
+            if attempt < maxRetries - 1 {
+                let delay = retryDelay * pow(2.0, Double(attempt))
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+        }
+
+        throw lastError ?? TuteliqError.unknownError("Request failed after \(maxRetries) attempts")
+    }
+
+    private func performMultipartRequest(
+        path: String,
+        body: Data,
+        boundary: String
+    ) async throws -> Data {
+        guard let url = URL(string: baseURL.absoluteString + path) else {
+            throw TuteliqError.unknownError("Invalid URL path: \(path)")
+        }
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        urlRequest.httpBody = body
+
+        let startTime = Date()
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: urlRequest)
+        } catch let error as URLError {
+            switch error.code {
+            case .timedOut:
+                throw TuteliqError.timeoutError("Request timed out after \(timeout) seconds")
+            case .notConnectedToInternet, .networkConnectionLost:
+                throw TuteliqError.networkError("No internet connection")
+            default:
+                throw TuteliqError.networkError(error.localizedDescription)
+            }
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw TuteliqError.unknownError("Invalid response")
+        }
+
+        updateMetadata(from: httpResponse, latency: Date().timeIntervalSince(startTime))
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let errorResponse = try? decoder.decode(APIErrorResponse.self, from: data)
+            let message = errorResponse?.error.message ?? "Request failed"
+
+            switch httpResponse.statusCode {
+            case 400:
+                throw TuteliqError.validationError(message, details: errorResponse?.error.details)
+            case 401:
+                throw TuteliqError.authenticationError(message)
+            case 403:
+                throw TuteliqError.subscriptionError(message, code: errorResponse?.error.code)
+            case 404:
+                throw TuteliqError.notFoundError(message)
+            case 429:
+                throw TuteliqError.rateLimitError(message)
+            case 500...:
+                throw TuteliqError.serverError(message, statusCode: httpResponse.statusCode)
+            default:
+                throw TuteliqError.unknownError(message)
+            }
+        }
+
+        return data
+    }
+
+    private static func mimeType(for filename: String) -> String? {
+        let ext = (filename as NSString).pathExtension.lowercased()
+        switch ext {
+        case "mp3": return "audio/mpeg"
+        case "wav": return "audio/wav"
+        case "m4a": return "audio/m4a"
+        case "ogg": return "audio/ogg"
+        case "flac": return "audio/flac"
+        case "webm": return "audio/webm"
+        case "mp4": return "audio/mp4"
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return nil
+        }
+    }
+}
+
+// MARK: - Multipart Data Helpers
+
+private extension Data {
+    mutating func appendMultipart(boundary: String, name: String, filename: String, mimeType: String, data: Data) {
+        append("--\(boundary)\r\n".data(using: .utf8)!)
+        append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        append(data)
+        append("\r\n".data(using: .utf8)!)
+    }
+
+    mutating func appendMultipartField(boundary: String, name: String, value: String) {
+        append("--\(boundary)\r\n".data(using: .utf8)!)
+        append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".data(using: .utf8)!)
+        append(value.data(using: .utf8)!)
+        append("\r\n".data(using: .utf8)!)
     }
 }
 

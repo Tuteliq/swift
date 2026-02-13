@@ -142,7 +142,7 @@ public final class Tuteliq: @unchecked Sendable {
     public func detectBullying(_ input: DetectBullyingInput) async throws -> BullyingResult {
         let body = BullyingRequest(
             text: input.content,
-            context: input.context.map(contextPayload),
+            context: contextPayload(input.context),
             externalId: input.externalId,
             customerId: input.customerId,
             metadata: input.metadata
@@ -166,11 +166,11 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Analysis result with grooming risk level and identified flags.
     /// - Throws: ``TuteliqError`` on failure.
     public func detectGrooming(_ input: DetectGroomingInput) async throws -> GroomingResult {
-        var ctx = input.context.map(contextPayload) ?? ContextPayload()
+        var ctx = contextPayload(input.context)
         if let childAge = input.childAge { ctx.childAge = childAge }
         let body = GroomingRequest(
             messages: input.messages.map { GroomingMessagePayload(senderRole: $0.role.rawValue, text: $0.content) },
-            context: input.childAge != nil || input.context != nil ? ctx : nil,
+            context: ctx,
             externalId: input.externalId,
             customerId: input.customerId,
             metadata: input.metadata
@@ -186,7 +186,7 @@ public final class Tuteliq: @unchecked Sendable {
     public func detectUnsafe(_ input: DetectUnsafeInput) async throws -> UnsafeResult {
         let body = UnsafeRequest(
             text: input.content,
-            context: input.context.map(contextPayload),
+            context: contextPayload(input.context),
             externalId: input.externalId,
             customerId: input.customerId,
             metadata: input.metadata
@@ -297,7 +297,7 @@ public final class Tuteliq: @unchecked Sendable {
         }
         let body = EmotionsRequest(
             messages: messages,
-            context: input.context.map(contextPayload),
+            context: contextPayload(input.context),
             externalId: input.externalId,
             customerId: input.customerId,
             metadata: input.metadata
@@ -548,7 +548,7 @@ public final class Tuteliq: @unchecked Sendable {
         if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
         if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
         if let v = input.language { body.appendMultipartField(boundary: boundary, name: "language", value: v) }
-        if let v = input.platform { body.appendMultipartField(boundary: boundary, name: "platform", value: v) }
+        body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
         if let v = input.childAge { body.appendMultipartField(boundary: boundary, name: "child_age", value: "\(v)") }
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
@@ -589,7 +589,7 @@ public final class Tuteliq: @unchecked Sendable {
         if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
         if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
         if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
-        if let v = input.platform { body.appendMultipartField(boundary: boundary, name: "platform", value: v) }
+        body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
            let jsonString = String(data: jsonData, encoding: .utf8) {
@@ -750,12 +750,24 @@ public final class Tuteliq: @unchecked Sendable {
 
     // MARK: - Private Helpers
 
-    private func contextPayload(_ context: AnalysisContext) -> ContextPayload {
+    private static let sdkIdentifier = "Swift SDK"
+
+    /// Resolves the platform string by appending the SDK identifier.
+    /// - "iOSApp" → "iOSApp - Swift SDK"
+    /// - nil      → "Swift SDK"
+    private static func resolvePlatform(_ platform: String?) -> String {
+        if let platform = platform, !platform.isEmpty {
+            return "\(platform) - \(sdkIdentifier)"
+        }
+        return sdkIdentifier
+    }
+
+    private func contextPayload(_ context: AnalysisContext?) -> ContextPayload {
         ContextPayload(
-            language: context.language,
-            ageGroup: context.ageGroup,
-            relationship: context.relationship,
-            platform: context.platform
+            language: context?.language,
+            ageGroup: context?.ageGroup,
+            relationship: context?.relationship,
+            platform: Self.resolvePlatform(context?.platform)
         )
     }
 
@@ -808,7 +820,7 @@ public final class Tuteliq: @unchecked Sendable {
         case .bullying(let id, let text, let context):
             return BatchItemPayload(
                 id: id, type: "bullying",
-                data: BatchItemData(text: text, context: context.map(contextPayload))
+                data: BatchItemData(text: text, context: contextPayload(context))
             )
         case .grooming(let id, let messages, let context):
             return BatchItemPayload(
@@ -821,7 +833,7 @@ public final class Tuteliq: @unchecked Sendable {
         case .unsafe(let id, let text, let context):
             return BatchItemPayload(
                 id: id, type: "unsafe",
-                data: BatchItemData(text: text, context: context.map(contextPayload))
+                data: BatchItemData(text: text, context: contextPayload(context))
             )
         case .emotions(let id, let messages, let context):
             return BatchItemPayload(

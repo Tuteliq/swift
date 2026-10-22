@@ -176,9 +176,10 @@ final class SessionClientCoverageTests: XCTestCase {
 
     func testTheOverrideIsWhereRequestsGo() async throws {
         var url: URL?
-        SessionMockURLProtocol.handler = { request, _ in url = request.url; return (200, Data(#"{"mode":"full"}"#.utf8)) }
-        _ = try? await client(link: "https://verify.staging.example/age/?session=s1&token=t1", apiBaseURL: try XCTUnwrap(URL(string: "https://api.staging.example"))).fetchMode()
+        SessionMockURLProtocol.handler = { request, _ in url = request.url; return (200, Data(#"{"verification_mode":"full"}"#.utf8)) }
+        let mode = try await client(link: "https://verify.staging.example/age/?session=s1&token=t1", apiBaseURL: XCTUnwrap(URL(string: "https://api.staging.example"))).fetchMode()
         XCTAssertEqual(url?.absoluteString, "https://api.staging.example/api/v1/verify/session/s1/mode")
+        XCTAssertEqual(mode.verificationMode, .full)
     }
 
     func testASessionIdIsEncodedOnceAndStaysOneSegment() async {
@@ -237,12 +238,17 @@ final class SessionClientCoverageTests: XCTestCase {
     /// A misconfigured base URL or a proxy answers 404 too; only the API's own
     /// route-not-found means chip validation is not offered.
     func testValidateChipThrowsForAnyOther404() async throws {
-        for body in [#"{"error":{"code":"OTHER","message":"x"}}"#, "<html>Not Found</html>"] {
+        for (body, code) in [(#"{"error":{"code":"OTHER","message":"x"}}"#, "OTHER"), ("<html>Not Found</html>", nil)] {
             SessionMockURLProtocol.handler = { _, _ in (404, Data(body.utf8)) }
             do {
                 _ = try await client().validateChip([.dg1: Data([0x61])], documentType: .passport)
                 XCTFail("Expected an error for \(body)")
-            } catch {}
+            } catch let VerificationError.server(actualCode, _, statusCode) {
+                XCTAssertEqual(actualCode, code, body)
+                XCTAssertEqual(statusCode, 404, body)
+            } catch {
+                XCTFail("Expected a 404 server error for \(body), got \(error)")
+            }
         }
     }
 

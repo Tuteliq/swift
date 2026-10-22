@@ -66,6 +66,50 @@ final class SessionLinkTests: XCTestCase {
     }
 }
 
+// MARK: - Rate limiting
+
+/// `Retry-After` comes from the network: no value may crash the app.
+final class RetryAfterTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func retryAfter(_ header: String?) -> TimeInterval?? {
+        guard case let .rateLimited(retryAfter) = VerificationSessionClient.error(status: 429, body: Data(), retryAfter: header, now: now) else {
+            return nil
+        }
+        return .some(retryAfter)
+    }
+
+    func testDelaySeconds() {
+        XCTAssertEqual(retryAfter("12"), 12)
+        XCTAssertEqual(retryAfter("0"), 0)
+    }
+
+    func testValuesThatAreNotADelayAreIgnored() {
+        for header in ["inf", "nan", "-5", "1.5", "1e3", "abc", "", " 12"] {
+            XCTAssertEqual(retryAfter(header), .some(nil), header)
+        }
+    }
+
+    func testHugeDelaysAreCapped() {
+        XCTAssertEqual(retryAfter("3000000000"), 86400)
+        XCTAssertEqual(retryAfter("99999999999999999999999999999999"), 86400)
+    }
+
+    func testHTTPDate() {
+        XCTAssertEqual(retryAfter("Fri, 15 Jan 2027 08:00:30 GMT"), 30)
+        // A date already past means "now".
+        XCTAssertEqual(retryAfter("Fri, 15 Jan 2027 07:00:00 GMT"), 0)
+    }
+
+    func testTheMessageNeverCrashes() {
+        for value: TimeInterval in [.infinity, -.infinity, .nan, 1e30, -5, 12.7] {
+            XCTAssertFalse(VerificationError.rateLimited(retryAfter: value).localizedDescription.isEmpty)
+        }
+        XCTAssertEqual(VerificationError.rateLimited(retryAfter: 12.2).localizedDescription, "Too many attempts. Try again in 13 seconds.")
+        XCTAssertEqual(VerificationError.rateLimited(retryAfter: .nan).localizedDescription, "Too many attempts. Try again shortly.")
+    }
+}
+
 // MARK: - Redaction
 
 /// The session token is a bearer credential. Printing, dumping or interpolating

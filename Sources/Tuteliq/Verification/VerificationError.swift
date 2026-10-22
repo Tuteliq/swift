@@ -38,7 +38,9 @@ public enum VerificationError: Error, LocalizedError, Sendable, Equatable {
         case .sessionAlreadyCompleted: return "This verification has already been submitted."
         case .sessionWrongState: return "This verification can't continue from its current state."
         case let .rateLimited(retryAfter):
-            return retryAfter.map { "Too many attempts. Try again in \(Int($0)) seconds." } ?? "Too many attempts. Try again shortly."
+            // Public case: any value can arrive here, and `Int(_:)` traps on infinity and NaN.
+            guard let retryAfter, retryAfter.isFinite, retryAfter >= 0 else { return "Too many attempts. Try again shortly." }
+            return "Too many attempts. Try again in \(Int(min(retryAfter, 86400).rounded(.up))) seconds."
         case let .server(_, message, _): return message
         case let .network(message): return "Network error: \(message)"
         case .timeout: return "The request timed out."

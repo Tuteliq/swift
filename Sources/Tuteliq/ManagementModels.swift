@@ -72,8 +72,7 @@ public struct BatchResultItem: Codable, Sendable {
     /// - Parameter type: The `Decodable` type to decode the result as.
     /// - Returns: The decoded result, or `nil` if the result is absent.
     public func decodeResult<T: Decodable>(as _: T.Type) throws -> T? {
-        guard let result = result else { return nil }
-        guard JSONSerialization.isValidJSONObject(result.value) else { return nil }
+        guard let result = result, JSONSerialization.isValidJSONObject(result.value) else { return nil }
         let data = try JSONSerialization.data(withJSONObject: result.value)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

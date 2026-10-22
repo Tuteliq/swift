@@ -165,9 +165,15 @@ struct BatchItemData: Encodable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        if let text = text { try container.encode(text, forKey: .text) }
-        if let messages = messages { try container.encode(messages, forKey: .messages) }
-        if let context = context { try container.encode(context, forKey: .context) }
+        if let text = text {
+            try container.encode(text, forKey: .text)
+        }
+        if let messages = messages {
+            try container.encode(messages, forKey: .messages)
+        }
+        if let context = context {
+            try container.encode(context, forKey: .context)
+        }
     }
 
     enum CodingKeys: String, CodingKey {

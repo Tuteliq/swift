@@ -38,10 +38,20 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_15.2.app
 
+      # Pinned so a new SwiftFormat release (and its new default rules) can't
+      # turn CI red on unchanged code. Bump the version and checksum together.
+      - name: Install SwiftFormat
+        env:
+          SWIFTFORMAT_VERSION: 0.64.0
+          SWIFTFORMAT_SHA256: 95ea62625d0b898a7af870293311ae6f09e4a3147ecd900593687e4b9ab2fd98
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/swiftformat.zip" \
+            "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip"
+          echo "${SWIFTFORMAT_SHA256}  $RUNNER_TEMP/swiftformat.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/swiftformat.zip" -d "$RUNNER_TEMP/swiftformat"
+          echo "$RUNNER_TEMP/swiftformat" >> "$GITHUB_PATH"
+
       - name: Check formatting
         run: |
-          if which swiftformat >/dev/null; then
-            swiftformat --lint .
-          else
-            echo "SwiftFormat not installed, skipping lint"
-          fi
+          swiftformat --version
+          swiftformat --lint .

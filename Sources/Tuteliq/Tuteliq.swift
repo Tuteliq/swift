@@ -166,7 +166,9 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Throws: ``TuteliqError`` on failure.
     public func detectGrooming(_ input: DetectGroomingInput) async throws -> GroomingResult {
         var ctx = contextPayload(input.context)
-        if let childAge = input.childAge { ctx.childAge = childAge }
+        if let childAge = input.childAge {
+            ctx.childAge = childAge
+        }
         let body = GroomingRequest(
             messages: input.messages.map { GroomingMessagePayload(senderRole: $0.role.rawValue, text: $0.content) },
             context: ctx,
@@ -231,8 +233,12 @@ public final class Tuteliq: @unchecked Sendable {
         let (bullyingResult, unsafeResult) = try await (bullyingTask, unsafeTask)
 
         var maxRiskScore = 0.0
-        if let b = bullyingResult { maxRiskScore = max(maxRiskScore, b.riskScore) }
-        if let u = unsafeResult { maxRiskScore = max(maxRiskScore, u.riskScore) }
+        if let b = bullyingResult {
+            maxRiskScore = max(maxRiskScore, b.riskScore)
+        }
+        if let u = unsafeResult {
+            maxRiskScore = max(maxRiskScore, u.riskScore)
+        }
 
         let riskLevel: RiskLevel
         switch maxRiskScore {
@@ -408,7 +414,9 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Request counts and quota information.
     public func getUsageSummary(date: String? = nil) async throws -> UsageSummaryResult {
         var query: [URLQueryItem]?
-        if let date = date { query = [URLQueryItem(name: "date", value: date)] }
+        if let date = date {
+            query = [URLQueryItem(name: "date", value: date)]
+        }
         return try await request(method: "GET", path: "/api/v1/usage/summary", query: query)
     }
 
@@ -418,7 +426,9 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Daily request counts.
     public func getUsageHistory(days: Int? = nil) async throws -> UsageHistoryResult {
         var query: [URLQueryItem]?
-        if let days = days { query = [URLQueryItem(name: "days", value: "\(days)")] }
+        if let days = days {
+            query = [URLQueryItem(name: "days", value: "\(days)")]
+        }
         return try await request(method: "GET", path: "/api/v1/usage/history", query: query)
     }
 
@@ -435,7 +445,9 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Per-tool and per-endpoint request counts.
     public func getUsageByTool(date: String? = nil) async throws -> UsageByToolResult {
         var query: [URLQueryItem]?
-        if let date = date { query = [URLQueryItem(name: "date", value: date)] }
+        if let date = date {
+            query = [URLQueryItem(name: "date", value: date)]
+        }
         return try await request(method: "GET", path: "/api/v1/usage/by-tool", query: query)
     }
 
@@ -542,14 +554,28 @@ public final class Tuteliq: @unchecked Sendable {
         let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
         body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
 
-        if let v = input.analysisType { body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue) }
-        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
-        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
-        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
-        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
-        if let v = input.language { body.appendMultipartField(boundary: boundary, name: "language", value: v) }
+        if let v = input.analysisType {
+            body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue)
+        }
+        if let v = input.fileId {
+            body.appendMultipartField(boundary: boundary, name: "file_id", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
+        if let v = input.language {
+            body.appendMultipartField(boundary: boundary, name: "language", value: v)
+        }
         body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
-        if let v = input.childAge { body.appendMultipartField(boundary: boundary, name: "child_age", value: "\(v)") }
+        if let v = input.childAge {
+            body.appendMultipartField(boundary: boundary, name: "child_age", value: "\(v)")
+        }
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
            let jsonString = String(data: jsonData, encoding: .utf8)
@@ -585,11 +611,21 @@ public final class Tuteliq: @unchecked Sendable {
         let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
         body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
 
-        if let v = input.analysisType { body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue) }
-        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
-        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
-        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
-        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
+        if let v = input.analysisType {
+            body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue)
+        }
+        if let v = input.fileId {
+            body.appendMultipartField(boundary: boundary, name: "file_id", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
         body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
@@ -679,10 +715,18 @@ public final class Tuteliq: @unchecked Sendable {
         let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
         body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
 
-        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
-        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
-        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
-        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
+        if let v = input.fileId {
+            body.appendMultipartField(boundary: boundary, name: "file_id", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
         body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
@@ -865,8 +909,12 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: List of audit log entries.
     public func getAuditLogs(action: AuditAction? = nil, limit: Int? = nil) async throws -> AuditLogsResult {
         var components: [String] = []
-        if let action = action { components.append("action=\(action.rawValue)") }
-        if let limit = limit { components.append("limit=\(limit)") }
+        if let action = action {
+            components.append("action=\(action.rawValue)")
+        }
+        if let limit = limit {
+            components.append("limit=\(limit)")
+        }
         let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
         return try await request(method: "GET", path: "/api/v1/account/audit-logs\(query)")
     }
@@ -896,8 +944,12 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: List of breach records.
     public func listBreaches(status: BreachStatus? = nil, limit: Int? = nil) async throws -> BreachListResult {
         var components: [String] = []
-        if let status = status { components.append("status=\(status.rawValue)") }
-        if let limit = limit { components.append("limit=\(limit)") }
+        if let status = status {
+            components.append("status=\(status.rawValue)")
+        }
+        if let limit = limit {
+            components.append("limit=\(limit)")
+        }
         let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
         return try await request(method: "GET", path: "/api/v1/admin/breach\(query)")
     }

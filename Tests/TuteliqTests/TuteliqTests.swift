@@ -239,7 +239,7 @@ final class TuteliqTests: XCTestCase {
     }
 
     func testAnyCodableNull() throws {
-        let data = "null".data(using: .utf8)!
+        let data = try XCTUnwrap("null".data(using: .utf8))
         let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
         XCTAssertTrue(decoded.value is NSNull)
     }

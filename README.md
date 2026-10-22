@@ -536,6 +536,78 @@ print(age.livenessValid, identity.faceConfidence ?? 0)
 | Plan | Pro and above | Business, Enterprise |
 | Credits | 10, charged on completion | 15, charged on completion |
 
+### Verification Sessions in Your Own App
+
+Everything a native capture UI needs from the API is in this SDK, so you can build your own document, liveness and selfie screens. Create the session where your API key lives (ideally your backend) and pass its `url` to the app. The app then talks to the session endpoints with the session token only.
+
+```swift
+// App side: the session link carries the session ID and token. It must be an
+// https link on verify.tuteliq.ai; uploads go to https://api.tuteliq.ai.
+let credentials = try VerificationSessionCredentials(sessionURL: session.url)
+let api = VerificationSessionClient(credentials: credentials)
+
+let mode = try await api.fetchMode()            // .full or .livenessOnly, language, age threshold…
+await api.reportProgress(.connected)            // drives the integrator's live status
+
+// Document: upright JPEG(s), validated in the background while the user continues.
+let front = try await api.validateDocument(passportJPEG, side: .passport, documentType: .passport, captureSource: .camera)
+if !front.valid { /* show front.issues.first and retake */ }
+
+// Optional: raw files read from the document's NFC chip.
+let chip = try await api.validateChip([.com: efCOM, .dg1: dg1, .sod: efSOD], documentType: .passport)  // nil if not offered
+
+// Liveness: fetch a signed challenge (on the server's clock), run your own detection, then build the token.
+var token = try await api.startLiveness()
+while let prompt = token.nextChallenge {
+    // Show the next prompt only once it may be recorded, so each step is recorded when it happened.
+    let wait = token.earliestNextCompletion.timeIntervalSinceNow
+    if wait > 0 { try await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000)) }
+    let passedAt = try await waitForUser(toPerform: prompt)          // your detection
+    try token.complete(prompt, at: passedAt)
+}
+let liveness = LivenessCapture(token: try token.encoded(), frames: keptFrames, nonce: token.challenge.nonce)
+
+// Selfie: with the liveness capture, the server can assess liveness, age and face match now.
+let selfie = try await api.validateSelfie(selfieJPEG, liveness: liveness)
+
+// Submit only what the server doesn't already hold.
+var submission = SessionSubmission(documentType: .passport)
+if !front.retained { submission.documentFront = passportJPEG; submission.documentCaptureSource = .camera }
+if !selfie.assessed || submission.documentFront != nil { submission.selfie = selfieJPEG; submission.liveness = liveness }
+let result = try await api.submit(submission)   // .completed, .failed or .documentRequired
+```
+
+Session links:
+
+- A link usually reaches the app from outside (a deep or universal link), so it never decides where the device uploads. `VerificationSessionCredentials` accepts only `https` links on `verify.tuteliq.ai` with no user name or password, and sends every request to `https://api.tuteliq.ai`.
+- For your own deployment (staging, for example), pass it explicitly: `VerificationSessionCredentials(sessionURL: link, apiBaseURL: yourAPI)`. The override must be `https`, or `http` on `localhost`. `createVerificationCredentials` passes the client's own base URL for you.
+- The `company` parameter is display text from the link, not a verified identity.
+- The session token is a bearer credential. The credentials, the client and `LivenessCapture` print and dump with the token redacted, and errors never repeat the link.
+
+Rules the server enforces:
+
+- **Challenge order and timing:** complete the prompts in the order received, at least 0.55 s apart. Wait until `earliestNextCompletion` before showing the next prompt rather than recording a completion later than it happened, and never record one in the future (`complete` refuses it). Use the token within about 5 minutes (`encoded()` refuses an expired one); each nonce works once.
+- **Frames:** send 2–12 upright, unmirrored JPEG frames from the liveness run. The server re-analyses them and decides; the token alone proves nothing.
+- **Errors:** session problems throw `VerificationError` (`.sessionExpired`, `.rateLimited(retryAfter:)`, `.server(code:message:statusCode:)`…). On `SVC_4002`, retry the submit once after a short pause. On `ANALYSIS_6005`, recapture the document. On `.documentRequired`, add a document and submit again.
+
+`VerificationSessionAPI` is the protocol behind `VerificationSessionClient`, for fakes in tests or your own transport.
+
+**What `capture_context` sends.** Each upload can carry a `CaptureContext`. It is untrusted metadata asserted by the device, used to know what evidence to expect and to diagnose failed captures; no verification is decided on it. Its fields:
+
+| Field | Contents | Why |
+|---|---|---|
+| `sdk` | SDK name and version, platform, OS version, hardware model (e.g. `iPhone17,1`) | Diagnosing capture problems on specific devices and versions |
+| `pipeline`, `pipeline_version` | The capture pipeline, e.g. `native-ios` | Which client produced the upload |
+| `face` | Camera used, on-device liveness engine and version, and for TrueDepth: verdict, frames analysed and with depth, pass rates, coverage | What liveness evidence to expect |
+| `document` | Camera or file, whether it was auto-captured, on-device document check verdict, tilt range and frame count, check scores and reasons | What document evidence to expect |
+| `chip` | Access protocol and key type, whether the key came from the photo, chip and active authentication outcomes, data groups read | What chip evidence to expect |
+
+It sends no image and no raw facial measurement. `LivenessDepthEvidence`'s millimetre and distance values are measurements of a face, possibly a child's: they stay on the device and are never encoded. Leave out `capture_context` entirely if you prefer; nothing depends on it.
+
+### Native Verification (licensed add-on)
+
+The hosted verification flow above works with this SDK alone. For a fully native iOS flow (document capture with on-device MRZ reading, NFC passport and ID chip reading, liveness and selfie, all in SwiftUI), Tuteliq offers **Tuteliq Verification**, a separate package that builds on this one. It requires a verification license; contact [Tuteliq](https://tuteliq.ai) for access.
+
 ### Webhooks
 
 ```swift

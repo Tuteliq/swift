@@ -582,6 +582,7 @@ Session links:
 - A link usually reaches the app from outside (a deep or universal link), so it never decides where the device uploads. `VerificationSessionCredentials` accepts only `https` links on `verify.tuteliq.ai` with no user name or password, and sends every request to `https://api.tuteliq.ai`.
 - For your own deployment (staging, for example), pass it explicitly: `VerificationSessionCredentials(sessionURL: link, apiBaseURL: yourAPI)`. The override must be `https`, or `http` on `localhost`. `createVerificationCredentials` passes the client's own base URL for you.
 - The `company` parameter is display text from the link, not a verified identity.
+- `redirectURL` comes from the link too, so anyone can set it. When the flow ends, send the user to the redirect you configured for your account, or check `redirectURL` against it before opening it.
 - The session token is a bearer credential. The credentials, the client and `LivenessCapture` print and dump with the token redacted, and errors never repeat the link.
 
 Rules the server enforces:

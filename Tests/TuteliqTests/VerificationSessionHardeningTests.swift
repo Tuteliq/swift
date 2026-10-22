@@ -64,6 +64,15 @@ final class SessionLinkTests: XCTestCase {
             XCTAssertFalse(text.contains("secret-token-123"), text)
         }
     }
+
+    func testIgnoresARedirectCarryingAUserNameOrPassword() throws {
+        for redirect in ["https%3A%2F%2Fu%3Ap%40evil.example%2Fdone", "https%3A%2F%2Fu%40evil.example%2Fdone"] {
+            let credentials = try VerificationSessionCredentials(
+                sessionURL: "https://verify.tuteliq.ai/age/?session=s1&token=t1&redirect=\(redirect)"
+            )
+            XCTAssertNil(credentials.redirectURL, redirect)
+        }
+    }
 }
 
 // MARK: - Rate limiting

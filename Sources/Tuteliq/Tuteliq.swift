@@ -135,16 +135,37 @@ public final class Tuteliq: @unchecked Sendable {
 
     /// Detect bullying in text content.
     ///
+    /// Branch on `result.recommendedAction.isActionable`, not on `isBullying`,
+    /// which also fires on low-severity, monitor-only signals.
+    ///
+    /// ```swift
+    /// var input = DetectBullyingInput(content: message)
+    /// input.continuationToken = lastToken   // carry trajectory across turns
+    /// let result = try await tuteliq.detectBullying(input)
+    /// lastToken = result.continuationToken
+    /// if result.recommendedAction.isActionable { flag(message) }
+    /// ```
+    ///
     /// - Parameter input: The bullying detection input.
     /// - Returns: Analysis result with severity, risk score, and recommended action.
     /// - Throws: ``TuteliqError`` on failure.
     public func detectBullying(_ input: DetectBullyingInput) async throws -> BullyingResult {
-        let body = BullyingRequest(
+        try validateContent(input.content)
+        let body = TextDetectionRequest(
             text: input.content,
             context: contextPayload(input.context),
             externalId: input.externalId,
             customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled,
+            continuationToken: input.continuationToken,
+            resetConversation: input.resetConversation ? true : nil,
+            options: DetectionOptions(
+                supportThreshold: input.supportThreshold?.rawValue,
+                verdictOnly: input.verdictOnly ? true : nil,
+                flagProfanity: input.flagProfanity,
+                flagRiskTerms: input.flagRiskTerms
+            ).nilIfEmpty
         )
         return try await request(method: "POST", path: "/api/v1/safety/bullying", body: body)
     }
@@ -165,30 +186,55 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Analysis result with grooming risk level and identified flags.
     /// - Throws: ``TuteliqError`` on failure.
     public func detectGrooming(_ input: DetectGroomingInput) async throws -> GroomingResult {
+        try validateMessages(input.messages)
         var ctx = contextPayload(input.context)
-        if let childAge = input.childAge { ctx.childAge = childAge }
+        ctx.childAge = input.childAge
+        ctx.participantAge = input.participantAge
         let body = GroomingRequest(
-            messages: input.messages.map { GroomingMessagePayload(senderRole: $0.role.rawValue, text: $0.content) },
+            messages: input.messages.map {
+                GroomingMessagePayload(senderRole: $0.role.rawValue, text: $0.content, senderAge: $0.senderAge)
+            },
             context: ctx,
             externalId: input.externalId,
             customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled,
+            continuationToken: input.continuationToken,
+            resetConversation: input.resetConversation ? true : nil,
+            options: DetectionOptions(
+                supportThreshold: input.supportThreshold?.rawValue,
+                verdictOnly: input.verdictOnly ? true : nil
+            ).nilIfEmpty
         )
         return try await request(method: "POST", path: "/api/v1/safety/grooming", body: body)
     }
 
     /// Detect unsafe content (self-harm, violence, hate speech, etc.).
     ///
+    /// Branch on `result.recommendedAction.isActionable`, not on `unsafe`.
+    /// For multi-turn context, pass earlier turns in `context.priorMessages`
+    /// or thread `continuationToken` between calls.
+    ///
     /// - Parameter input: The unsafe content detection input.
     /// - Returns: Analysis result with categories, severity, and risk score.
     /// - Throws: ``TuteliqError`` on failure.
     public func detectUnsafe(_ input: DetectUnsafeInput) async throws -> UnsafeResult {
-        let body = UnsafeRequest(
+        try validateContent(input.content)
+        let body = TextDetectionRequest(
             text: input.content,
             context: contextPayload(input.context),
             externalId: input.externalId,
             customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled,
+            continuationToken: input.continuationToken,
+            resetConversation: input.resetConversation ? true : nil,
+            options: DetectionOptions(
+                supportThreshold: input.supportThreshold?.rawValue,
+                verdictOnly: input.verdictOnly ? true : nil,
+                flagProfanity: input.flagProfanity,
+                flagRiskTerms: input.flagRiskTerms
+            ).nilIfEmpty
         )
         return try await request(method: "POST", path: "/api/v1/safety/unsafe", body: body)
     }
@@ -215,12 +261,18 @@ public final class Tuteliq: @unchecked Sendable {
         let bullyingInput = DetectBullyingInput(
             content: input.content, context: input.context,
             externalId: input.externalId, customerId: input.customerId,
-            metadata: metadataRaw
+            metadata: metadataRaw,
+            verdictOnly: input.verdictOnly,
+            flagProfanity: input.flagProfanity, flagRiskTerms: input.flagRiskTerms,
+            incidentModerationEnabled: input.incidentModerationEnabled
         )
         let unsafeInput = DetectUnsafeInput(
             content: input.content, context: input.context,
             externalId: input.externalId, customerId: input.customerId,
-            metadata: metadataRaw
+            metadata: metadataRaw,
+            verdictOnly: input.verdictOnly,
+            flagProfanity: input.flagProfanity, flagRiskTerms: input.flagRiskTerms,
+            incidentModerationEnabled: input.incidentModerationEnabled
         )
 
         async let bullyingTask: BullyingResult? = include.contains(.bullying)
@@ -231,8 +283,15 @@ public final class Tuteliq: @unchecked Sendable {
         let (bullyingResult, unsafeResult) = try await (bullyingTask, unsafeTask)
 
         var maxRiskScore = 0.0
-        if let b = bullyingResult { maxRiskScore = max(maxRiskScore, b.riskScore) }
-        if let u = unsafeResult { maxRiskScore = max(maxRiskScore, u.riskScore) }
+        var maxConfidence = 0.0
+        if let b = bullyingResult {
+            maxRiskScore = max(maxRiskScore, b.riskScore)
+            maxConfidence = max(maxConfidence, b.confidence)
+        }
+        if let u = unsafeResult {
+            maxRiskScore = max(maxRiskScore, u.riskScore)
+            maxConfidence = max(maxConfidence, u.confidence)
+        }
 
         let riskLevel: RiskLevel
         switch maxRiskScore {
@@ -252,25 +311,21 @@ public final class Tuteliq: @unchecked Sendable {
         }
         let summary = findings.isEmpty ? "No safety concerns detected." : findings.joined(separator: ". ")
 
-        let actions = [bullyingResult?.recommendedAction, unsafeResult?.recommendedAction].compactMap { $0 }
-        let recommendedAction: String
-        if actions.contains(RecommendedAction.immediateIntervention.rawValue) {
-            recommendedAction = RecommendedAction.immediateIntervention.rawValue
-        } else if actions.contains(RecommendedAction.flagForModerator.rawValue) {
-            recommendedAction = RecommendedAction.flagForModerator.rawValue
-        } else if actions.contains(RecommendedAction.monitor.rawValue) {
-            recommendedAction = RecommendedAction.monitor.rawValue
-        } else {
-            recommendedAction = RecommendedAction.none.rawValue
-        }
+        // Ranked over the shared enum. The old string matching looked for
+        // `flag_for_moderator`, which the API never sends, so `flag_for_review`
+        // and `block` verdicts collapsed to `none`.
+        let recommendedAction = RecommendedAction.strongest([
+            bullyingResult?.recommendedAction, unsafeResult?.recommendedAction,
+        ])
 
         return AnalyzeResult(
-            riskLevel: riskLevel, riskScore: maxRiskScore, summary: summary,
+            riskLevel: riskLevel, riskScore: maxRiskScore, confidence: maxConfidence, summary: summary,
             bullying: bullyingResult, unsafe: unsafeResult,
             recommendedAction: recommendedAction,
             creditsUsed: nil,
             externalId: input.externalId, customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled
         )
     }
 
@@ -289,11 +344,13 @@ public final class Tuteliq: @unchecked Sendable {
     public func analyzeEmotions(_ input: AnalyzeEmotionsInput) async throws -> EmotionsResult {
         let messages: [EmotionMessagePayload]
         if let content = input.content {
+            try validateContent(content)
             messages = [EmotionMessagePayload(sender: "user", text: content)]
         } else if let msgs = input.messages {
+            try validateMessages(msgs)
             messages = msgs.map { EmotionMessagePayload(sender: $0.sender, text: $0.content) }
         } else {
-            messages = []
+            throw TuteliqError.validationError("Either content or messages is required")
         }
         let body = EmotionsRequest(
             messages: messages,
@@ -318,6 +375,7 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Steps, tone, and reading level for the target audience.
     /// - Throws: ``TuteliqError`` on failure.
     public func getActionPlan(_ input: GetActionPlanInput) async throws -> ActionPlanResult {
+        try validateContent(input.situation, field: "Situation")
         let body = ActionPlanRequest(
             role: (input.audience ?? .parent).rawValue,
             situation: input.situation,
@@ -325,7 +383,8 @@ public final class Tuteliq: @unchecked Sendable {
             severity: input.severity?.rawValue,
             externalId: input.externalId,
             customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled
         )
         return try await request(method: "POST", path: "/api/v1/guidance/action-plan", body: body)
     }
@@ -338,6 +397,7 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Summary, risk level, categories, and next steps.
     /// - Throws: ``TuteliqError`` on failure.
     public func generateReport(_ input: GenerateReportInput) async throws -> ReportResult {
+        try validateMessages(input.messages)
         let hasMeta = input.childAge != nil || input.incidentType != nil
             || input.conversationId != nil || input.timestampRange != nil
         let body = ReportRequest(
@@ -350,7 +410,8 @@ public final class Tuteliq: @unchecked Sendable {
             ) : nil,
             externalId: input.externalId,
             customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled
         )
         return try await request(method: "POST", path: "/api/v1/reports/incident", body: body)
     }
@@ -365,14 +426,134 @@ public final class Tuteliq: @unchecked Sendable {
         try await request(method: "GET", path: "/api/v1/policy")
     }
 
-    /// Update the policy configuration.
+    /// Replace the policy configuration.
+    ///
+    /// Keys use the API's camelCase names:
+    /// ```swift
+    /// try await tuteliq.setPolicy([
+    ///     "bullying": AnyCodable(["enabled": true, "minRiskScoreToFlag": 0.5]),
+    /// ])
+    /// ```
     ///
     /// - Parameter config: New policy configuration dictionary.
     /// - Returns: Updated policy configuration.
     /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
-    public func updatePolicy(_ config: [String: AnyCodable]) async throws -> PolicyResult {
+    public func setPolicy(_ config: [String: AnyCodable]) async throws -> PolicyResult {
         let body = PolicyUpdateRequest(config: config)
         return try await request(method: "PUT", path: "/api/v1/policy", body: body)
+    }
+
+    /// The 2.x name of ``setPolicy(_:)``.
+    @available(*, deprecated, renamed: "setPolicy(_:)")
+    public func updatePolicy(_ config: [String: AnyCodable]) async throws -> PolicyResult {
+        try await setPolicy(config)
+    }
+
+    // MARK: - Policy Automation Rules
+
+    /// List all policy automation rules for your account.
+    public func listPolicyRules() async throws -> ListPolicyRulesResult {
+        try await request(method: "GET", path: "/api/v1/policy/automation")
+    }
+
+    /// Create a policy automation rule.
+    ///
+    /// When a detection matches the rule's conditions, its action
+    /// (block / flag / escalate / notify / log only) is applied automatically.
+    ///
+    /// ```swift
+    /// let rule = try await tuteliq.createPolicyRule(CreatePolicyRuleInput(
+    ///     name: "Escalate critical grooming",
+    ///     endpoints: ["grooming"],
+    ///     conditions: PolicyRuleConditions(minSeverity: .critical),
+    ///     action: PolicyRuleAction(type: .escalate, escalateTo: "safety-team")
+    /// ))
+    /// ```
+    public func createPolicyRule(_ input: CreatePolicyRuleInput) async throws -> PolicyRuleResult {
+        try await request(method: "POST", path: "/api/v1/policy/automation", body: input)
+    }
+
+    /// Get a single policy automation rule.
+    public func getPolicyRule(id: String) async throws -> PolicyRuleResult {
+        try await request(method: "GET", path: "/api/v1/policy/automation/\(pathSegment(id, name: "Rule ID"))")
+    }
+
+    /// Update a policy automation rule. Only non-nil fields are sent.
+    public func updatePolicyRule(id: String, _ input: UpdatePolicyRuleInput) async throws -> PolicyRuleResult {
+        try await request(
+            method: "PUT", path: "/api/v1/policy/automation/\(pathSegment(id, name: "Rule ID"))", body: input
+        )
+    }
+
+    /// Delete a policy automation rule.
+    public func deletePolicyRule(id: String) async throws -> DeleteResult {
+        try await request(method: "DELETE", path: "/api/v1/policy/automation/\(pathSegment(id, name: "Rule ID"))")
+    }
+
+    /// Test your rules against a hypothetical detection result without running a detection.
+    ///
+    /// - Returns: Which rules matched and the winning action after priority resolution.
+    public func evaluatePolicyRules(_ input: EvaluatePolicyRulesInput) async throws -> EvaluatePolicyRulesResult {
+        try await request(method: "POST", path: "/api/v1/policy/automation/evaluate", body: input)
+    }
+
+    // MARK: - Detection Settings
+
+    /// Get the account's detection settings: enabled endpoints, default context,
+    /// and the account defaults for `flagProfanity` / `flagRiskTerms`.
+    public func getDetectionSettings() async throws -> DetectionSettings {
+        try await request(method: "GET", path: "/api/v1/settings/detection")
+    }
+
+    /// Update the account's detection settings.
+    ///
+    /// - Throws: ``TuteliqError/validationError(_:details:)`` if both
+    ///   `enabledEndpoints` and `disabledEndpoints` are set.
+    public func updateDetectionSettings(_ input: UpdateDetectionSettingsInput) async throws -> UpdateDetectionSettingsResult {
+        if input.enabledEndpoints != nil, input.disabledEndpoints != nil {
+            throw TuteliqError.validationError("enabledEndpoints and disabledEndpoints are mutually exclusive")
+        }
+        return try await request(method: "PUT", path: "/api/v1/settings/detection", body: input)
+    }
+
+    /// Reset detection settings to their defaults (all endpoints enabled).
+    public func resetDetectionSettings() async throws -> SuccessMessageResult {
+        try await request(method: "DELETE", path: "/api/v1/settings/detection")
+    }
+
+    // MARK: - Threat Intelligence
+
+    /// Anonymised threat intelligence trends across the Tuteliq network. Requires Business tier or higher.
+    public func getIntelligenceTrends(_ options: IntelligenceTrendsOptions = IntelligenceTrendsOptions()) async throws -> IntelligenceTrendsResult {
+        var query: [URLQueryItem] = []
+        if let v = options.days {
+            query.append(URLQueryItem(name: "days", value: "\(v)"))
+        }
+        if let v = options.endpoint {
+            query.append(URLQueryItem(name: "endpoint", value: v))
+        }
+        if let v = options.ageGroup {
+            query.append(URLQueryItem(name: "age_group", value: v))
+        }
+        if let v = options.platform {
+            query.append(URLQueryItem(name: "platform", value: v))
+        }
+        return try await request(method: "GET", path: "/api/v1/intelligence/trends", query: query)
+    }
+
+    /// Emerging threats over a recent window (default 7 days, max 90). Requires Business tier or higher.
+    public func getEmergingThreats(days: Int? = nil) async throws -> EmergingThreatsResult {
+        try await request(method: "GET", path: "/api/v1/intelligence/emerging", query: daysQuery(days))
+    }
+
+    /// The weekly threat intelligence digest. Requires Business tier or higher.
+    public func getWeeklyDigest() async throws -> WeeklyDigestResult {
+        try await request(method: "GET", path: "/api/v1/intelligence/weekly-digest")
+    }
+
+    /// Anonymised global risk trends (1–90 days, default 30). Requires Business tier or higher.
+    public func getRiskTrends(days: Int? = nil) async throws -> RiskTrendsResult {
+        try await request(method: "GET", path: "/api/v1/safety/risk-trends", query: daysQuery(days))
     }
 
     // MARK: - Batch Analysis
@@ -393,6 +574,12 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Individual results and a processing summary.
     /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
     public func batchAnalyze(_ input: BatchAnalyzeInput) async throws -> BatchAnalyzeResult {
+        guard !input.items.isEmpty else {
+            throw TuteliqError.validationError("Items array is required and cannot be empty")
+        }
+        guard input.items.count <= 50 else {
+            throw TuteliqError.validationError("Maximum 50 items per batch request")
+        }
         let body = BatchRequest(
             items: input.items.map(encodeBatchItem),
             parallel: input.parallel
@@ -408,7 +595,9 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Request counts and quota information.
     public func getUsageSummary(date: String? = nil) async throws -> UsageSummaryResult {
         var query: [URLQueryItem]?
-        if let date = date { query = [URLQueryItem(name: "date", value: date)] }
+        if let date = date {
+            query = [URLQueryItem(name: "date", value: date)]
+        }
         return try await request(method: "GET", path: "/api/v1/usage/summary", query: query)
     }
 
@@ -418,7 +607,9 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Daily request counts.
     public func getUsageHistory(days: Int? = nil) async throws -> UsageHistoryResult {
         var query: [URLQueryItem]?
-        if let days = days { query = [URLQueryItem(name: "days", value: "\(days)")] }
+        if let days = days {
+            query = [URLQueryItem(name: "days", value: "\(days)")]
+        }
         return try await request(method: "GET", path: "/api/v1/usage/history", query: query)
     }
 
@@ -435,7 +626,9 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: Per-tool and per-endpoint request counts.
     public func getUsageByTool(date: String? = nil) async throws -> UsageByToolResult {
         var query: [URLQueryItem]?
-        if let date = date { query = [URLQueryItem(name: "date", value: date)] }
+        if let date = date {
+            query = [URLQueryItem(name: "date", value: date)]
+        }
         return try await request(method: "GET", path: "/api/v1/usage/by-tool", query: query)
     }
 
@@ -487,7 +680,7 @@ public final class Tuteliq: @unchecked Sendable {
             isActive: input.isActive,
             headers: input.headers
         )
-        return try await request(method: "PUT", path: "/api/v1/webhooks/\(id)", body: body)
+        return try await request(method: "PUT", path: "/api/v1/webhooks/\(pathSegment(id, name: "Webhook ID"))", body: body)
     }
 
     /// Delete a webhook.
@@ -495,7 +688,7 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Parameter id: Webhook ID.
     /// - Returns: Confirmation of deletion.
     public func deleteWebhook(id: String) async throws -> DeleteResult {
-        try await request(method: "DELETE", path: "/api/v1/webhooks/\(id)")
+        try await request(method: "DELETE", path: "/api/v1/webhooks/\(pathSegment(id, name: "Webhook ID"))")
     }
 
     /// Send a test payload to a webhook.
@@ -514,7 +707,7 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Parameter id: Webhook ID.
     /// - Returns: The new signing secret.
     public func regenerateWebhookSecret(id: String) async throws -> RegenerateSecretResult {
-        try await request(method: "POST", path: "/api/v1/webhooks/\(id)/regenerate-secret")
+        try await request(method: "POST", path: "/api/v1/webhooks/\(pathSegment(id, name: "Webhook ID"))/regenerate-secret")
     }
 
     // MARK: - Media Analysis
@@ -539,17 +732,31 @@ public final class Tuteliq: @unchecked Sendable {
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
 
-        let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
+        let mimeType = Self.mimeType(forFilename: input.filename) ?? "application/octet-stream"
         body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
 
-        if let v = input.analysisType { body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue) }
-        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
-        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
-        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
-        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
-        if let v = input.language { body.appendMultipartField(boundary: boundary, name: "language", value: v) }
+        if let v = input.analysisType {
+            body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue)
+        }
+        if let v = input.fileId {
+            body.appendMultipartField(boundary: boundary, name: "file_id", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
+        if let v = input.language {
+            body.appendMultipartField(boundary: boundary, name: "language", value: v)
+        }
         body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
-        if let v = input.childAge { body.appendMultipartField(boundary: boundary, name: "child_age", value: "\(v)") }
+        if let v = input.childAge {
+            body.appendMultipartField(boundary: boundary, name: "child_age", value: "\(v)")
+        }
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
            let jsonString = String(data: jsonData, encoding: .utf8)
@@ -582,20 +789,34 @@ public final class Tuteliq: @unchecked Sendable {
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
 
-        let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
+        let mimeType = Self.mimeType(forFilename: input.filename) ?? "application/octet-stream"
         body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
 
-        if let v = input.analysisType { body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue) }
-        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
-        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
-        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
-        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
+        if let v = input.analysisType {
+            body.appendMultipartField(boundary: boundary, name: "analysis_type", value: v.rawValue)
+        }
+        if let v = input.fileId {
+            body.appendMultipartField(boundary: boundary, name: "file_id", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
         body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
            let jsonString = String(data: jsonData, encoding: .utf8)
         {
             body.appendMultipartField(boundary: boundary, name: "metadata", value: jsonString)
+        }
+
+        if let v = input.flagProfanity {
+            body.appendMultipartField(boundary: boundary, name: "flag_profanity", value: "\(v)")
         }
 
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
@@ -647,6 +868,20 @@ public final class Tuteliq: @unchecked Sendable {
         try await request(method: "POST", path: "/api/v1/safety/radicalisation", body: buildDetectionRequest(input))
     }
 
+    /// Detect linguistic distress-signal patterns (loneliness, isolation, hopelessness, trust-seeking openers).
+    ///
+    /// Framed as content classification rather than inner-state emotion inference
+    /// (EU AI Act Art 5(1)(f)). Conversation-aware: thread `continuationToken` between calls.
+    public func detectDistressSignals(_ input: DetectionInput) async throws -> DetectionResult {
+        try await request(method: "POST", path: "/api/v1/safety/distress-signals", body: buildDetectionRequest(input))
+    }
+
+    /// Detect technology-facilitated gender-based violence: image-based abuse, cyberstalking,
+    /// doxing, outing, post-separation abuse, digital coercion and sexualised deepfakes.
+    public func detectTFGBV(_ input: DetectionInput) async throws -> DetectionResult {
+        try await request(method: "POST", path: "/api/v1/safety/tfgbv", body: buildDetectionRequest(input))
+    }
+
     // MARK: - Multi-Endpoint Analysis
 
     /// Run multiple detection endpoints on a single piece of content.
@@ -654,14 +889,26 @@ public final class Tuteliq: @unchecked Sendable {
     /// When vulnerability-exploitation is included, its cross-endpoint modifier
     /// automatically adjusts severity scores across all other results.
     public func analyseMulti(_ input: AnalyseMultiInput) async throws -> AnalyseMultiResult {
+        try validateContent(input.content)
+        guard !input.detections.isEmpty else {
+            throw TuteliqError.validationError("At least one detection endpoint is required")
+        }
+        guard input.detections.count <= 10 else {
+            throw TuteliqError.validationError("Maximum 10 detection endpoints per request")
+        }
         let body = AnalyseMultiRequest(
             text: input.content,
             endpoints: input.detections.map(\.rawValue),
             context: contextPayload(input.context),
-            options: input.includeEvidence ? AnalyseMultiOptions(includeEvidence: true) : nil,
+            options: DetectionOptions(
+                supportThreshold: input.supportThreshold?.rawValue,
+                includeEvidence: input.includeEvidence ? true : nil,
+                verdictOnly: input.verdictOnly ? true : nil
+            ).nilIfEmpty,
             externalId: input.externalId,
             customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled
         )
         return try await request(method: "POST", path: "/api/v1/analyse/multi", body: body)
     }
@@ -676,14 +923,95 @@ public final class Tuteliq: @unchecked Sendable {
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
 
-        let mimeType = Self.mimeType(for: input.filename) ?? "application/octet-stream"
+        let mimeType = Self.mimeType(forFilename: input.filename) ?? "application/octet-stream"
         body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
 
-        if let v = input.fileId { body.appendMultipartField(boundary: boundary, name: "file_id", value: v) }
-        if let v = input.externalId { body.appendMultipartField(boundary: boundary, name: "external_id", value: v) }
-        if let v = input.customerId { body.appendMultipartField(boundary: boundary, name: "customer_id", value: v) }
-        if let v = input.ageGroup { body.appendMultipartField(boundary: boundary, name: "age_group", value: v) }
+        if let v = input.fileId {
+            body.appendMultipartField(boundary: boundary, name: "file_id", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
         body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
+        if let metadata = input.metadata,
+           let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
+           let jsonString = String(data: jsonData, encoding: .utf8)
+        {
+            body.appendMultipartField(boundary: boundary, name: "metadata", value: jsonString)
+        }
+
+        if let v = input.flagProfanity {
+            body.appendMultipartField(boundary: boundary, name: "flag_profanity", value: "\(v)")
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        return try await multipartRequest(path: "/api/v1/safety/video", body: body, boundary: boundary)
+    }
+
+    // MARK: - Document Analysis
+
+    /// Analyze a PDF document for safety concerns.
+    ///
+    /// Extracts text from each page (via text layer or OCR) and runs the specified
+    /// detection endpoints on every page. Supported format: PDF (max 50MB).
+    ///
+    /// ```swift
+    /// let pdfData = try Data(contentsOf: pdfURL)
+    /// let input = AnalyzeDocumentInput(
+    ///     file: pdfData,
+    ///     filename: "report.pdf",
+    ///     endpoints: [.unsafe, .coerciveControl, .radicalisation]
+    /// )
+    /// let result = try await tuteliq.analyzeDocument(input)
+    /// print("Risk: \(result.overallSeverity)")
+    /// print("Flagged pages: \(result.flaggedPages.count)")
+    /// print("Credits: \(result.creditsUsed)")
+    /// ```
+    ///
+    /// - Parameter input: Document analysis input with PDF file data.
+    /// - Returns: Per-page detection results with overall risk assessment.
+    /// - Throws: ``TuteliqError`` on failure. Requires Indie tier or higher.
+    public func analyzeDocument(_ input: AnalyzeDocumentInput) async throws -> DocumentAnalysisResult {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+
+        let mimeType = Self.mimeType(forFilename: input.filename) ?? "application/octet-stream"
+        body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
+
+        if let endpoints = input.endpoints {
+            let endpointStrings = endpoints.map(\.rawValue)
+            if let jsonData = try? JSONSerialization.data(withJSONObject: endpointStrings),
+               let jsonString = String(data: jsonData, encoding: .utf8)
+            {
+                body.appendMultipartField(boundary: boundary, name: "endpoints", value: jsonString)
+            }
+        }
+        if let v = input.fileId {
+            body.appendMultipartField(boundary: boundary, name: "file_id", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
+        if let v = input.language {
+            body.appendMultipartField(boundary: boundary, name: "language", value: v)
+        }
+        body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
+        if let v = input.supportThreshold {
+            body.appendMultipartField(boundary: boundary, name: "support_threshold", value: v.rawValue)
+        }
         if let metadata = input.metadata,
            let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
            let jsonString = String(data: jsonData, encoding: .utf8)
@@ -693,7 +1021,86 @@ public final class Tuteliq: @unchecked Sendable {
 
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
 
-        return try await multipartRequest(path: "/api/v1/safety/video", body: body, boundary: boundary)
+        return try await multipartRequest(path: "/api/v1/safety/document", body: body, boundary: boundary)
+    }
+
+    // MARK: - Synthetic Content Detection
+
+    /// Detect AI-generated or synthetic text (LLM output, synthetic identities, AI-enhanced grooming scripts).
+    public func detectSyntheticText(_ input: DetectSyntheticTextInput) async throws -> SyntheticTextResult {
+        try validateContent(input.content)
+        let body = SyntheticTextRequest(
+            text: input.content,
+            context: contextPayload(input.context),
+            externalId: input.externalId,
+            customerId: input.customerId,
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled,
+            bypassCache: input.bypassCache ? true : nil,
+            options: DetectionOptions(supportThreshold: input.supportThreshold?.rawValue).nilIfEmpty
+        )
+        return try await request(method: "POST", path: "/api/v1/safety/synthetic-content", body: body)
+    }
+
+    /// Detect AI-generated images with a multi-signal forensic pipeline
+    /// (vision, EXIF, pixel statistics, C2PA, watermarks, perceptual hash).
+    ///
+    /// ```swift
+    /// let result = try await tuteliq.detectSyntheticImage(
+    ///     DetectSyntheticMediaInput(file: jpegData, filename: "photo.jpg")
+    /// )
+    /// if result.classification == .confirmedSynthetic { ... }
+    /// ```
+    public func detectSyntheticImage(_ input: DetectSyntheticMediaInput) async throws -> SyntheticImageResult {
+        try await syntheticMediaRequest(input, path: "/api/v1/safety/synthetic-content/image")
+    }
+
+    /// Detect AI-generated or cloned voice audio with spectral forensics.
+    public func detectSyntheticAudio(_ input: DetectSyntheticMediaInput) async throws -> SyntheticAudioResult {
+        try await syntheticMediaRequest(input, path: "/api/v1/safety/synthetic-content/audio")
+    }
+
+    /// Detect deepfakes and AI-generated video with temporal face consistency and lip-sync analysis.
+    public func detectSyntheticVideo(_ input: DetectSyntheticMediaInput) async throws -> SyntheticVideoResult {
+        try await syntheticMediaRequest(input, path: "/api/v1/safety/synthetic-content/video")
+    }
+
+    private func syntheticMediaRequest<T: Decodable>(_ input: DetectSyntheticMediaInput, path: String) async throws -> T {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+
+        let mimeType = Self.mimeType(forFilename: input.filename) ?? "application/octet-stream"
+        body.appendMultipart(boundary: boundary, name: "file", filename: input.filename, mimeType: mimeType, data: input.file)
+
+        if let v = input.maxFrames {
+            body.appendMultipartField(boundary: boundary, name: "max_frames", value: "\(v)")
+        }
+        if let v = input.ageGroup {
+            body.appendMultipartField(boundary: boundary, name: "age_group", value: v)
+        }
+        if let v = input.language {
+            body.appendMultipartField(boundary: boundary, name: "language", value: v)
+        }
+        if let v = input.externalId {
+            body.appendMultipartField(boundary: boundary, name: "external_id", value: v)
+        }
+        if let v = input.customerId {
+            body.appendMultipartField(boundary: boundary, name: "customer_id", value: v)
+        }
+        body.appendMultipartField(boundary: boundary, name: "platform", value: Self.resolvePlatform(input.platform))
+        if let metadata = input.metadata,
+           let jsonData = try? JSONSerialization.data(withJSONObject: metadata),
+           let jsonString = String(data: jsonData, encoding: .utf8)
+        {
+            body.appendMultipartField(boundary: boundary, name: "metadata", value: jsonString)
+        }
+        if input.bypassCache {
+            body.appendMultipartField(boundary: boundary, name: "bypass_cache", value: "true")
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        return try await multipartRequest(path: path, body: body, boundary: boundary)
     }
 
     // MARK: - Verification
@@ -721,15 +1128,16 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Parameter id: The session ID from `createVerificationSession`.
     /// - Returns: A `VerificationSessionResult` with current status.
     public func getVerificationSession(id: String) async throws -> VerificationSessionResult {
-        return try await request(method: "GET", path: "/api/v1/verify/session/\(id)")
+        return try await request(method: "GET", path: "/api/v1/verify/session/\(pathSegment(id, name: "Session ID"))")
     }
 
-    /// Cancel a verification session.
+    /// Cancel a verification session. The session moves to `expired` and any
+    /// staged document images are purged.
     ///
     /// - Parameter id: The session ID to cancel.
-    /// - Returns: A `CancelVerificationSessionResult` with confirmation message.
+    /// - Returns: A `CancelVerificationSessionResult` (`ok: true`).
     public func cancelVerificationSession(id: String) async throws -> CancelVerificationSessionResult {
-        return try await request(method: "DELETE", path: "/api/v1/verify/session/\(id)")
+        return try await request(method: "DELETE", path: "/api/v1/verify/session/\(pathSegment(id, name: "Session ID"))")
     }
 
     /// Retrieve a past age verification result.
@@ -737,7 +1145,7 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Parameter id: The verification ID.
     /// - Returns: A `VerificationRetrieveResult` with verification details.
     public func getAgeVerification(id: String) async throws -> VerificationRetrieveResult {
-        return try await request(method: "GET", path: "/api/v1/verify/age/\(id)")
+        return try await request(method: "GET", path: "/api/v1/verify/age/\(pathSegment(id, name: "Verification ID"))")
     }
 
     /// Retrieve a past identity verification result.
@@ -745,7 +1153,74 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Parameter id: The verification ID.
     /// - Returns: An `IdentityRetrieveResult` with verification details.
     public func getIdentityVerification(id: String) async throws -> IdentityRetrieveResult {
-        return try await request(method: "GET", path: "/api/v1/verify/identity/\(id)")
+        return try await request(method: "GET", path: "/api/v1/verify/identity/\(pathSegment(id, name: "Verification ID"))")
+    }
+
+    /// Get a server-signed liveness challenge.
+    ///
+    /// Returns a `LivenessChallenge` whose `challenges` array prescribes the
+    /// order in which the client must run the prompts (e.g. `"center"`,
+    /// `"left"`, `"right"`, `"blink"`, `"smile"`). The signature is bound to
+    /// that order — re-ordering will fail server-side validation.
+    ///
+    /// The endpoint is server-side public (no auth required); the SDK still
+    /// sends its Bearer header, which the server simply ignores.
+    ///
+    /// - Returns: A `LivenessChallenge` valid for ~5 minutes.
+    public func getLivenessChallenge() async throws -> LivenessChallenge {
+        return try await request(method: "GET", path: "/api/v1/verify/age/challenge")
+    }
+
+    /// Submit verification documents for processing.
+    ///
+    /// Wraps `POST /api/v1/verify/submit`. Provide either a passport image
+    /// **or** an ID front + back. Selfie and `livenessToken` are required.
+    ///
+    /// ```swift
+    /// let challenge = try await tuteliq.getLivenessChallenge()
+    /// // ... run challenges in order, build a liveness token JSON ...
+    /// let input = SubmitVerificationInput(
+    ///     passport: passportJPEG,
+    ///     selfie: selfieJPEG,
+    ///     livenessToken: tokenJSON,
+    ///     livenessFrames: capturedFrames
+    /// )
+    /// let result = try await tuteliq.submitVerification(input)
+    /// ```
+    ///
+    /// - Parameter input: Document buffers, selfie, liveness token, optional frames.
+    /// - Returns: A `VerificationSubmitResult` with status, age, document fields, face match, liveness.
+    public func submitVerification(_ input: SubmitVerificationInput) async throws -> VerificationSubmitResult {
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var body = Data()
+
+        if let data = input.passport {
+            body.appendMultipart(boundary: boundary, name: "passport", filename: "passport.jpg", mimeType: "image/jpeg", data: data)
+        }
+        if let data = input.idFront {
+            body.appendMultipart(boundary: boundary, name: "id_front", filename: "id_front.jpg", mimeType: "image/jpeg", data: data)
+        }
+        if let data = input.idBack {
+            body.appendMultipart(boundary: boundary, name: "id_back", filename: "id_back.jpg", mimeType: "image/jpeg", data: data)
+        }
+        body.appendMultipart(boundary: boundary, name: "selfie", filename: "selfie.jpg", mimeType: "image/jpeg", data: input.selfie)
+        body.appendMultipartField(boundary: boundary, name: "liveness_token", value: input.livenessToken)
+
+        if let frames = input.livenessFrames {
+            for (idx, frame) in frames.enumerated() {
+                body.appendMultipart(
+                    boundary: boundary,
+                    name: "liveness_frame",
+                    filename: "frame-\(idx).jpg",
+                    mimeType: "image/jpeg",
+                    data: frame
+                )
+            }
+        }
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        return try await multipartRequest(path: "/api/v1/verify/submit", body: body, boundary: boundary)
     }
 
     // MARK: - Voice Streaming
@@ -865,8 +1340,12 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: List of audit log entries.
     public func getAuditLogs(action: AuditAction? = nil, limit: Int? = nil) async throws -> AuditLogsResult {
         var components: [String] = []
-        if let action = action { components.append("action=\(action.rawValue)") }
-        if let limit = limit { components.append("limit=\(limit)") }
+        if let action = action {
+            components.append("action=\(action.rawValue)")
+        }
+        if let limit = limit {
+            components.append("limit=\(limit)")
+        }
         let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
         return try await request(method: "GET", path: "/api/v1/account/audit-logs\(query)")
     }
@@ -896,8 +1375,12 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Returns: List of breach records.
     public func listBreaches(status: BreachStatus? = nil, limit: Int? = nil) async throws -> BreachListResult {
         var components: [String] = []
-        if let status = status { components.append("status=\(status.rawValue)") }
-        if let limit = limit { components.append("limit=\(limit)") }
+        if let status = status {
+            components.append("status=\(status.rawValue)")
+        }
+        if let limit = limit {
+            components.append("limit=\(limit)")
+        }
         let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
         return try await request(method: "GET", path: "/api/v1/admin/breach\(query)")
     }
@@ -907,7 +1390,7 @@ public final class Tuteliq: @unchecked Sendable {
     /// - Parameter id: Breach ID.
     /// - Returns: The breach record.
     public func getBreach(id: String) async throws -> BreachResult {
-        try await request(method: "GET", path: "/api/v1/admin/breach/\(id)")
+        try await request(method: "GET", path: "/api/v1/admin/breach/\(pathSegment(id, name: "Breach ID"))")
     }
 
     /// Update a breach's status.
@@ -926,7 +1409,149 @@ public final class Tuteliq: @unchecked Sendable {
         if let notes = input.notes {
             body["notes"] = AnyCodable(notes)
         }
-        return try await request(method: "PATCH", path: "/api/v1/admin/breach/\(id)", body: body)
+        return try await request(method: "PATCH", path: "/api/v1/admin/breach/\(pathSegment(id, name: "Breach ID"))", body: body)
+    }
+
+    // MARK: - Customer-Managed Encryption Keys
+
+    /// Register (or rotate) the RSA public key used to encrypt your incident records.
+    ///
+    /// New incident rationale, visual description, source data and metadata are
+    /// wrapped with a per-record AES-256-GCM key, itself encrypted with this RSA-OAEP
+    /// key. Tuteliq cannot decrypt them, and cannot recover incidents if you lose the private key.
+    public func registerEncryptionKey(_ input: RegisterEncryptionKeyInput) async throws -> CustomerEncryptionKey {
+        try await request(method: "POST", path: "/api/v1/account/encryption-key", body: input)
+    }
+
+    /// The currently registered public key, or `nil` when none is registered
+    /// (incidents then use server-side encryption with a Tuteliq-held key).
+    public func getEncryptionKey() async throws -> CustomerEncryptionKey? {
+        do {
+            return try await request(method: "GET", path: "/api/v1/account/encryption-key") as CustomerEncryptionKey
+        } catch TuteliqError.notFoundError {
+            return nil
+        }
+    }
+
+    /// Revoke the registered public key. New incidents fall back to server-side encryption;
+    /// existing ones stay readable only with the prior key.
+    public func revokeEncryptionKey() async throws -> RevokeEncryptionKeyResult {
+        try await request(method: "DELETE", path: "/api/v1/account/encryption-key")
+    }
+
+    // MARK: - Audit Receipts (EU AI Act Art 12)
+
+    /// Fetch the signed audit receipt for a past request.
+    ///
+    /// Only the API key that produced the receipt can fetch it; any other gets a 404.
+    /// - Parameter requestId: The request ID (see ``lastRequestId``).
+    public func getAuditReceipt(requestId: String) async throws -> AuditReceipt {
+        try await request(method: "GET", path: "/api/v1/audit/receipts/\(pathSegment(requestId, name: "Request ID"))")
+    }
+
+    // MARK: - Incident Review (EU AI Act Art 14)
+
+    /// Submit a moderator review of an incident.
+    ///
+    /// Persists the override (keeping the original classification) and emits a
+    /// signed audit receipt linked to the incident.
+    public func reviewIncident(id: String, _ input: ReviewIncidentInput) async throws -> ReviewIncidentResult {
+        if input.action == .reclassify, input.newRiskCategory == nil {
+            throw TuteliqError.validationError("action reclassify requires newRiskCategory")
+        }
+        return try await request(
+            method: "POST", path: "/api/v1/incidents/\(pathSegment(id, name: "Incident ID"))/review", body: input
+        )
+    }
+
+    /// Apply the same review to up to 100 incidents.
+    ///
+    /// Each incident still gets its own audit receipt. Per-incident failures are
+    /// non-fatal; retry the entries in `results` where `ok` is false.
+    public func batchReviewIncidents(_ input: BatchReviewIncidentsInput) async throws -> BatchReviewIncidentsResult {
+        guard !input.incidentIds.isEmpty else {
+            throw TuteliqError.validationError("incidentIds must be a non-empty array")
+        }
+        guard input.incidentIds.count <= 100 else {
+            throw TuteliqError.validationError("batchReviewIncidents accepts at most 100 incidents per call")
+        }
+        if input.action == .reclassify, input.newRiskCategory == nil {
+            throw TuteliqError.validationError("action reclassify requires newRiskCategory")
+        }
+        return try await request(method: "POST", path: "/api/v1/incidents/batch-review", body: input)
+    }
+
+    // MARK: - Incidents Dashboard
+
+    /// Paginated, filterable listing of your incidents, newest first.
+    ///
+    /// ```swift
+    /// var cursor: String?
+    /// repeat {
+    ///     let page = try await tuteliq.listIncidents(ListIncidentsInput(severity: .critical, cursor: cursor))
+    ///     page.incidents.forEach { print($0.id, $0.riskLevel) }
+    ///     cursor = page.nextCursor
+    /// } while cursor != nil
+    /// ```
+    public func listIncidents(_ input: ListIncidentsInput = ListIncidentsInput()) async throws -> ListIncidentsResult {
+        var query: [URLQueryItem] = []
+        func add(_ name: String, _ value: String?) {
+            if let value = value {
+                query.append(URLQueryItem(name: name, value: value))
+            }
+        }
+        add("category", input.category)
+        add("severity", input.severity?.rawValue)
+        add("status", input.status?.rawValue)
+        add("source", input.source?.rawValue)
+        add("from", input.from)
+        add("to", input.to)
+        add("platform", input.platform)
+        add("external_id", input.externalId)
+        add("customer_id", input.customerId)
+        add("limit", input.limit.map { "\($0)" })
+        add("cursor", input.cursor)
+        if input.includeSummary {
+            add("include_summary", "true")
+        }
+        return try await request(method: "GET", path: "/api/v1/incidents", query: query)
+    }
+
+    /// A single incident's full detail. BYOK-encrypted fields are listed in `e2eEnvelopeFields`.
+    public func getIncident(id: String) async throws -> IncidentDetail {
+        try await request(method: "GET", path: "/api/v1/incidents/\(pathSegment(id, name: "Incident ID"))")
+    }
+
+    /// KPI overview of incidents over a window (default: the last 30 days).
+    /// - Parameters:
+    ///   - from: ISO 8601 inclusive lower bound.
+    ///   - to: ISO 8601 exclusive upper bound.
+    public func getIncidentsOverview(from: String? = nil, to: String? = nil) async throws -> IncidentsOverview {
+        var query: [URLQueryItem] = []
+        if let from = from {
+            query.append(URLQueryItem(name: "from", value: from))
+        }
+        if let to = to {
+            query.append(URLQueryItem(name: "to", value: to))
+        }
+        return try await request(method: "GET", path: "/api/v1/incidents/overview", query: query)
+    }
+
+    /// Time-bucketed incident counts with a per-bucket severity breakdown (default: daily, last 30 days).
+    public func getIncidentTrends(
+        bucket: IncidentTrendBucketSize? = nil, from: String? = nil, to: String? = nil
+    ) async throws -> IncidentTrends {
+        var query: [URLQueryItem] = []
+        if let bucket = bucket {
+            query.append(URLQueryItem(name: "bucket", value: bucket.rawValue))
+        }
+        if let from = from {
+            query.append(URLQueryItem(name: "from", value: from))
+        }
+        if let to = to {
+            query.append(URLQueryItem(name: "to", value: to))
+        }
+        return try await request(method: "GET", path: "/api/v1/incidents/trends", query: query)
     }
 
     // MARK: - Secure API Key Storage (Keychain)
@@ -1054,19 +1679,67 @@ public final class Tuteliq: @unchecked Sendable {
             language: context?.language,
             ageGroup: context?.ageGroup,
             relationship: context?.relationship,
-            platform: Self.resolvePlatform(context?.platform)
+            platform: Self.resolvePlatform(context?.platform),
+            country: context?.country,
+            priorMessages: context?.priorMessages
         )
     }
 
-    private func buildDetectionRequest(_ input: DetectionInput) -> DetectionRequest {
-        DetectionRequest(
+    private func buildDetectionRequest(_ input: DetectionInput) throws -> DetectionRequest {
+        try validateContent(input.content)
+        // `includeEvidence` is forwarded on true AND false, and omitted only when
+        // unset, so the server can apply its own default (false under verdictOnly).
+        return DetectionRequest(
             text: input.content,
             context: contextPayload(input.context),
-            includeEvidence: input.includeEvidence ? true : nil,
+            includeEvidence: input.includeEvidence,
+            continuationToken: input.continuationToken,
+            resetConversation: input.resetConversation ? true : nil,
             externalId: input.externalId,
             customerId: input.customerId,
-            metadata: input.metadata
+            metadata: input.metadata,
+            incidentModerationEnabled: input.incidentModerationEnabled,
+            options: DetectionOptions(
+                supportThreshold: input.supportThreshold?.rawValue,
+                includeEvidence: input.includeEvidence,
+                verdictOnly: input.verdictOnly ? true : nil
+            ).nilIfEmpty
         )
+    }
+
+    private static let maxContentLength = 50000
+    private static let maxMessagesCount = 100
+
+    private func validateContent(_ content: String, field: String = "Content") throws {
+        guard !content.isEmpty else {
+            throw TuteliqError.validationError("\(field) is required")
+        }
+        guard content.count <= Self.maxContentLength else {
+            throw TuteliqError.validationError("\(field) exceeds maximum length of \(Self.maxContentLength) characters")
+        }
+    }
+
+    private func validateMessages<T>(_ messages: [T]) throws {
+        guard !messages.isEmpty else {
+            throw TuteliqError.validationError("Messages array is required and cannot be empty")
+        }
+        guard messages.count <= Self.maxMessagesCount else {
+            throw TuteliqError.validationError("Messages array exceeds maximum count of \(Self.maxMessagesCount)")
+        }
+    }
+
+    /// Percent-encodes an ID for use as one path segment.
+    private func pathSegment(_ value: String, name: String) throws -> String {
+        guard !value.isEmpty else { throw TuteliqError.validationError("\(name) is required") }
+        // A dot segment is resolved by the URL, not sent as an ID.
+        guard value != ".", value != ".." else { throw TuteliqError.validationError("\(name) is not valid") }
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/?#")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
+    private func daysQuery(_ days: Int?) -> [URLQueryItem] {
+        days.map { [URLQueryItem(name: "days", value: "\($0)")] } ?? []
     }
 
     /// Synchronous state update — safe to call from any context.
@@ -1122,13 +1795,20 @@ public final class Tuteliq: @unchecked Sendable {
                 id: id, type: "bullying",
                 data: BatchItemData(text: text, context: contextPayload(context))
             )
-        case let .grooming(id, messages, context):
+        case let .grooming(id, messages, context, childAge):
+            var ctx = contextPayload(context)
+            ctx.childAge = childAge
             return BatchItemPayload(
                 id: id, type: "grooming",
                 data: BatchItemData(
                     messages: messages.map { ["sender_role": $0.role.rawValue, "text": $0.content] },
-                    context: context.map(contextPayload)
+                    context: ctx
                 )
+            )
+        case let .text(id, type, text, context):
+            return BatchItemPayload(
+                id: id, type: type.rawValue,
+                data: BatchItemData(text: text, context: contextPayload(context))
             )
         case let .unsafe (id, text, context):
             return BatchItemPayload(
@@ -1140,7 +1820,7 @@ public final class Tuteliq: @unchecked Sendable {
                 id: id, type: "emotions",
                 data: BatchItemData(
                     messages: messages.map { ["sender": $0.sender, "text": $0.content] },
-                    context: context.map(contextPayload)
+                    context: contextPayload(context)
                 )
             )
         }
@@ -1206,7 +1886,7 @@ public final class Tuteliq: @unchecked Sendable {
                 return try decoder.decode(T.self, from: data)
             } catch let error as TuteliqError {
                 switch error {
-                case .authenticationError, .validationError, .notFoundError, .subscriptionError:
+                case .authenticationError, .validationError, .notFoundError, .subscriptionError, .quotaExceededError:
                     throw error
                 default:
                     lastError = error
@@ -1286,6 +1966,8 @@ public final class Tuteliq: @unchecked Sendable {
                 throw TuteliqError.subscriptionError(message, code: errorResponse?.error.code)
             case 404:
                 throw TuteliqError.notFoundError(message)
+            case 429 where Self.quotaErrorCodes.contains(errorResponse?.error.code ?? ""):
+                throw TuteliqError.quotaExceededError(message)
             case 429:
                 throw TuteliqError.rateLimitError(message)
             case 500...:
@@ -1315,7 +1997,7 @@ public final class Tuteliq: @unchecked Sendable {
                 return try decoder.decode(T.self, from: data)
             } catch let error as TuteliqError {
                 switch error {
-                case .authenticationError, .validationError, .notFoundError, .subscriptionError:
+                case .authenticationError, .validationError, .notFoundError, .subscriptionError, .quotaExceededError:
                     throw error
                 default:
                     lastError = error
@@ -1385,6 +2067,8 @@ public final class Tuteliq: @unchecked Sendable {
                 throw TuteliqError.subscriptionError(message, code: errorResponse?.error.code)
             case 404:
                 throw TuteliqError.notFoundError(message)
+            case 429 where Self.quotaErrorCodes.contains(errorResponse?.error.code ?? ""):
+                throw TuteliqError.quotaExceededError(message)
             case 429:
                 throw TuteliqError.rateLimitError(message)
             case 500...:
@@ -1397,22 +2081,30 @@ public final class Tuteliq: @unchecked Sendable {
         return data
     }
 
-    private static func mimeType(for filename: String) -> String? {
+    private static let quotaErrorCodes: Set<String> = ["RATE_2003", "QUOTA_EXCEEDED"]
+
+    /// The MIME type the SDK sends for an upload with this filename, or `nil` for an
+    /// unrecognised extension.
+    ///
+    /// The type decides admission (the API rejects `application/octet-stream`)
+    /// and behaviour: `image/gif` makes the API analyse an animation frame by frame.
+    public static func mimeType(forFilename filename: String) -> String? {
         let ext = (filename as NSString).pathExtension.lowercased()
         switch ext {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
         case "mp3": return "audio/mpeg"
         case "wav": return "audio/wav"
         case "m4a": return "audio/m4a"
         case "ogg": return "audio/ogg"
         case "flac": return "audio/flac"
-        case "webm": return "audio/webm"
-        case "mp4": return "audio/mp4"
-        case "png": return "image/png"
-        case "jpg", "jpeg": return "image/jpeg"
-        case "gif": return "image/gif"
-        case "webp": return "image/webp"
+        case "mp4": return "video/mp4"
+        case "webm": return "video/webm"
         case "mov": return "video/quicktime"
         case "avi": return "video/x-msvideo"
+        case "pdf": return "application/pdf"
         default: return nil
         }
     }

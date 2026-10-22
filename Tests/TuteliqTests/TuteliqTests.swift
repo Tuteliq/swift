@@ -154,8 +154,27 @@ final class TuteliqTests: XCTestCase {
     func testRecommendedActionEnum() {
         XCTAssertEqual(RecommendedAction.none.rawValue, "none")
         XCTAssertEqual(RecommendedAction.monitor.rawValue, "monitor")
-        XCTAssertEqual(RecommendedAction.flagForModerator.rawValue, "flag_for_moderator")
+        XCTAssertEqual(RecommendedAction.flagForReview.rawValue, "flag_for_review")
+        XCTAssertEqual(RecommendedAction.block.rawValue, "block")
         XCTAssertEqual(RecommendedAction.immediateIntervention.rawValue, "immediate_intervention")
+    }
+
+    func testRecommendedActionDecodesLegacyAndUnknownValues() throws {
+        func decode(_ raw: String) throws -> RecommendedAction {
+            try JSONDecoder().decode(RecommendedAction.self, from: Data("\"\(raw)\"".utf8))
+        }
+        XCTAssertEqual(try decode("flag_for_moderator"), .flagForReview)
+        XCTAssertEqual(try decode("no_action"), .none)
+        // An unrecognised verdict must reach a human, not vanish or fail decoding.
+        XCTAssertEqual(try decode("quarantine"), .flagForReview)
+    }
+
+    func testRecommendedActionOrderingAndActionable() {
+        XCTAssertEqual(RecommendedAction.strongest([.monitor, nil, .block, .flagForReview]), .block)
+        XCTAssertEqual(RecommendedAction.strongest([]), .none)
+        XCTAssertFalse(RecommendedAction.monitor.isActionable)
+        XCTAssertTrue(RecommendedAction.flagForReview.isActionable)
+        XCTAssertTrue(RecommendedAction.immediateIntervention.isActionable)
     }
 
     func testWebhookEventTypeEnum() {
@@ -239,7 +258,7 @@ final class TuteliqTests: XCTestCase {
     }
 
     func testAnyCodableNull() throws {
-        let data = "null".data(using: .utf8)!
+        let data = try XCTUnwrap("null".data(using: .utf8))
         let decoded = try JSONDecoder().decode(AnyCodable.self, from: data)
         XCTAssertTrue(decoded.value is NSNull)
     }
@@ -253,10 +272,23 @@ final class TuteliqTests: XCTestCase {
             "confidence": 0.87,
             "severity": "high",
             "rationale": "Contains exclusionary language",
-            "recommended_action": "flag_for_moderator",
+            "recommended_action": "flag_for_review",
+            "action_detail": "Queue for a moderator",
             "risk_score": 0.82,
             "external_id": "msg_123",
             "customer_id": "cust_456",
+            "continuation_token": "tok_abc",
+            "state_source": "token",
+            "trajectory_risk": 0.74,
+            "trajectory": "rising",
+            "severity_series": [0.05, 0.65, 0.75],
+            "profanity": ["detected": true, "matches": ["damn"]],
+            "risk_terms": ["detected": true, "matches": [["term": "kill", "category": "violence"]]],
+            "support": [
+                "country": "GB",
+                "helplines": [["name": "Childline", "number": "0800 1111"]],
+                "response_guide": ["immediateActions": ["Talk to a trusted adult"], "resources": []],
+            ],
         ]
         let data = jsonData(json)
         let result = try JSONDecoder().decode(BullyingResult.self, from: data)
@@ -266,9 +298,19 @@ final class TuteliqTests: XCTestCase {
         XCTAssertEqual(result.confidence, 0.87)
         XCTAssertEqual(result.severity, .high)
         XCTAssertEqual(result.riskScore, 0.82)
-        XCTAssertEqual(result.recommendedAction, "flag_for_moderator")
+        XCTAssertEqual(result.recommendedAction, .flagForReview)
+        XCTAssertEqual(result.actionDetail, "Queue for a moderator")
         XCTAssertEqual(result.externalId, "msg_123")
         XCTAssertEqual(result.customerId, "cust_456")
+        XCTAssertEqual(result.continuationToken, "tok_abc")
+        XCTAssertEqual(result.stateSource, .token)
+        XCTAssertEqual(result.trajectoryRisk, 0.74)
+        XCTAssertEqual(result.trajectory, .rising)
+        XCTAssertEqual(result.severitySeries, [0.05, 0.65, 0.75])
+        XCTAssertEqual(result.profanity?.matches, ["damn"])
+        XCTAssertEqual(result.riskTerms?.matches.first?.category, "violence")
+        XCTAssertEqual(result.support?.helplines.first?.name, "Childline")
+        XCTAssertEqual(result.support?.responseGuide?.immediateActions, ["Talk to a trusted adult"])
     }
 
     func testGroomingResultDecoding() throws {
@@ -662,6 +704,7 @@ final class TuteliqTests: XCTestCase {
         let json: [String: Any] = [
             "risk_level": "high",
             "risk_score": 0.85,
+            "confidence": 0.9,
             "summary": "Concerns detected",
             "recommended_action": "flag_for_moderator",
         ]
@@ -669,6 +712,7 @@ final class TuteliqTests: XCTestCase {
         let result = try JSONDecoder().decode(AnalyzeResult.self, from: data)
 
         XCTAssertEqual(result.riskLevel, .high)
+        XCTAssertEqual(result.recommendedAction, .flagForReview)
     }
 
     func testReportResultRiskLevelValue() throws {
@@ -722,6 +766,303 @@ final class TuteliqTests: XCTestCase {
         XCTAssertNotNil(capturedBody?["external_id"], "Should use snake_case key 'external_id'")
         XCTAssertNotNil(capturedBody?["customer_id"], "Should use snake_case key 'customer_id'")
         XCTAssertNil(capturedBody?["externalId"], "Should NOT have camelCase key")
+    }
+
+    // MARK: - Request Body Shapes
+
+    private static let benignBullying: [String: Any] = [
+        "is_bullying": false, "bullying_type": [] as [String],
+        "confidence": 0.1, "severity": "low", "rationale": "OK",
+        "recommended_action": "none", "risk_score": 0.0,
+    ]
+
+    private func capturingClient(
+        response: [String: Any],
+        capture: @escaping ([String: Any]) -> Void
+    ) throws -> Tuteliq {
+        try makeClient { request in
+            var data = request.httpBody ?? Data()
+            if data.isEmpty, let stream = request.httpBodyStream {
+                stream.open()
+                let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+                defer { buf.deallocate() }
+                while stream.hasBytesAvailable {
+                    let count = stream.read(buf, maxLength: 4096)
+                    guard count > 0 else { break }
+                    data.append(buf, count: count)
+                }
+                stream.close()
+            }
+            if let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                capture(body)
+            }
+            return self.mockResponse(json: response)
+        }
+    }
+
+    func testBullyingSendsOptionsContinuationAndPriorMessages() async throws {
+        var body: [String: Any] = [:]
+        let client = try capturingClient(response: Self.benignBullying) { body = $0 }
+
+        _ = try await client.detectBullying(DetectBullyingInput(
+            content: "see you tomorrow",
+            context: AnalysisContext(
+                platform: "MyApp", country: "GB",
+                priorMessages: [PriorMessage(role: "contact", text: "nobody likes you")]
+            ),
+            metadata: ["userName": "a"],
+            supportThreshold: .medium,
+            verdictOnly: true,
+            continuationToken: "tok_1",
+            flagProfanity: false,
+            flagRiskTerms: true,
+            incidentModerationEnabled: false
+        ))
+
+        let options = body["options"] as? [String: Any]
+        XCTAssertEqual(options?["support_threshold"] as? String, "medium")
+        XCTAssertEqual(options?["verdict_only"] as? Bool, true)
+        // An explicit false must reach the API: it overrides the account default.
+        XCTAssertEqual(options?["flag_profanity"] as? Bool, false)
+        XCTAssertEqual(options?["flag_risk_terms"] as? Bool, true)
+        XCTAssertEqual(body["continuation_token"] as? String, "tok_1")
+        XCTAssertNil(body["reset_conversation"], "false is omitted")
+        XCTAssertEqual(body["incident_moderation_enabled"] as? Bool, false)
+        let context = body["context"] as? [String: Any]
+        XCTAssertEqual(context?["platform"] as? String, "MyApp - Swift SDK")
+        XCTAssertEqual(context?["country"] as? String, "GB")
+        let prior = context?["prior_messages"] as? [[String: Any]]
+        XCTAssertEqual(prior?.first?["text"] as? String, "nobody likes you")
+        // Metadata keys are the caller's and must not be snake-cased.
+        XCTAssertEqual((body["metadata"] as? [String: Any])?["userName"] as? String, "a")
+    }
+
+    func testBullyingOmitsOptionsWhenNothingSet() async throws {
+        var body: [String: Any] = [:]
+        let client = try capturingClient(response: Self.benignBullying) { body = $0 }
+        _ = try await client.detectBullying(content: "hello")
+        XCTAssertNil(body["options"])
+        XCTAssertNil(body["continuation_token"])
+    }
+
+    func testDetectionForwardsExplicitIncludeEvidenceFalse() async throws {
+        var body: [String: Any] = [:]
+        let client = try capturingClient(response: [
+            "endpoint": "romance-scam", "detected": false, "severity": 0.0, "confidence": 0.9,
+            "risk_score": 0.0, "level": "none", "categories": [] as [Any],
+            "recommended_action": "none", "language": "en", "language_status": "stable",
+        ]) { body = $0 }
+
+        _ = try await client.detectRomanceScam(DetectionInput(content: "hi", includeEvidence: false))
+        XCTAssertEqual(body["include_evidence"] as? Bool, false)
+        XCTAssertEqual((body["options"] as? [String: Any])?["include_evidence"] as? Bool, false)
+
+        _ = try await client.detectRomanceScam(DetectionInput(content: "hi", verdictOnly: true))
+        XCTAssertNil(body["include_evidence"], "unset lets the server infer it from verdictOnly")
+        XCTAssertEqual((body["options"] as? [String: Any])?["verdict_only"] as? Bool, true)
+    }
+
+    func testAnalyzeAggregatesStrongestAction() async throws {
+        let client = try makeClient { request in
+            if request.url?.path.hasSuffix("/bullying") == true {
+                var json = Self.benignBullying
+                json["recommended_action"] = "monitor"
+                json["confidence"] = 0.4
+                return self.mockResponse(json: json)
+            }
+            return self.mockResponse(json: [
+                "unsafe": true, "categories": ["self_harm"], "severity": "high",
+                "confidence": 0.8, "risk_score": 0.75, "recommended_action": "block",
+            ])
+        }
+        let result = try await client.analyze(content: "test")
+        XCTAssertEqual(result.recommendedAction, .block)
+        XCTAssertEqual(result.confidence, 0.8)
+        XCTAssertEqual(result.riskLevel, .high)
+    }
+
+    func testQuotaExceededIsNotRetried() async throws {
+        var calls = 0
+        let client = try makeClient(maxRetries: 3) { _ in
+            calls += 1
+            return self.mockResponse(statusCode: 429, json: [
+                "error": ["code": "RATE_2003", "message": "Monthly quota exceeded"],
+            ])
+        }
+        do {
+            _ = try await client.detectBullying(content: "test")
+            XCTFail("Should have thrown")
+        } catch let TuteliqError.quotaExceededError(message) {
+            XCTAssertEqual(message, "Monthly quota exceeded")
+        }
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testClientSideValidation() async throws {
+        let client = try makeClient { _ in
+            XCTFail("Invalid input must not reach the network")
+            return self.mockResponse(json: [:])
+        }
+        await XCTAssertThrowsValidation { _ = try await client.detectBullying(content: "") }
+        await XCTAssertThrowsValidation {
+            _ = try await client.detectUnsafe(content: String(repeating: "a", count: 50001))
+        }
+        await XCTAssertThrowsValidation { _ = try await client.detectGrooming(DetectGroomingInput(messages: [])) }
+        await XCTAssertThrowsValidation { _ = try await client.batchAnalyze(BatchAnalyzeInput(items: [])) }
+        await XCTAssertThrowsValidation {
+            _ = try await client.updateDetectionSettings(
+                UpdateDetectionSettingsInput(enabledEndpoints: ["bullying"], disabledEndpoints: ["unsafe"])
+            )
+        }
+        await XCTAssertThrowsValidation {
+            _ = try await client.reviewIncident(
+                id: "inc_1",
+                ReviewIncidentInput(action: .reclassify, reasonCode: .incorrectCategory, moderatorExternalId: "mod_1")
+            )
+        }
+    }
+
+    private func XCTAssertThrowsValidation(
+        _ body: () async throws -> Void, file: StaticString = #filePath, line: UInt = #line
+    ) async {
+        do {
+            try await body()
+            XCTFail("Expected validationError", file: file, line: line)
+        } catch TuteliqError.validationError {
+        } catch {
+            XCTFail("Expected validationError, got \(error)", file: file, line: line)
+        }
+    }
+
+    func testBatchSendsTextTypesAndDecodesCamelCaseTiming() async throws {
+        var body: [String: Any] = [:]
+        let client = try capturingClient(response: [
+            "results": [["id": "a", "type": "romance_scam", "success": true, "credits_used": 1]],
+            "summary": ["total": 1, "successful": 1, "failed": 0, "processingTimeMs": 42, "total_credits_used": 1],
+        ]) { body = $0 }
+
+        let result = try await client.batchAnalyze(BatchAnalyzeInput(items: [
+            .text(id: "a", type: .romanceScam, text: "send the gift card codes"),
+            .grooming(id: "b", messages: [GroomingMessage(role: .adult, content: "hi")], childAge: 12),
+        ]))
+
+        let items = body["items"] as? [[String: Any]]
+        XCTAssertEqual(items?.first?["type"] as? String, "romance_scam")
+        XCTAssertEqual((items?.first?["data"] as? [String: Any])?["text"] as? String, "send the gift card codes")
+        let groomingContext = (items?.last?["data"] as? [String: Any])?["context"] as? [String: Any]
+        XCTAssertEqual(groomingContext?["child_age"] as? Int, 12)
+        XCTAssertEqual(result.summary.processingTimeMs, 42)
+        XCTAssertEqual(result.summary.totalCreditsUsed, 1)
+        XCTAssertEqual(result.results.first?.creditsUsed, 1)
+    }
+
+    func testUsageQuotaDecodesCamelCaseWireShape() async throws {
+        let client = try makeClient { _ in
+            self.mockResponse(json: [
+                "apiKeyId": "key_1", "tier": "pro",
+                "limits": ["requestsPerMinute": 100, "requestsPerDay": -1],
+                "current": ["requestsThisMinute": 3, "requestsToday": 50],
+                "remaining": ["requestsThisMinute": 97, "requestsToday": -1],
+                "resetsInSeconds": 12,
+            ])
+        }
+        let quota = try await client.getUsageQuota()
+        XCTAssertEqual(quota.limits.requestsPerMinute, 100)
+        XCTAssertEqual(quota.remaining.requestsToday, -1)
+        XCTAssertEqual(quota.resetsInSeconds, 12)
+    }
+
+    func testUsageSummaryDecodesCamelCaseWireShape() throws {
+        let json: [String: Any] = [
+            "apiKeyId": "key_1", "tier": "pro", "date": "2026-10-15",
+            "usage": ["totalRequests": 10, "successRequests": 9, "errorRequests": 1],
+            "quota": ["requestsPerMinute": 100, "requestsPerDay": 5000, "remainingToday": 4990],
+        ]
+        let result = try JSONDecoder().decode(UsageSummaryResult.self, from: jsonData(json))
+        XCTAssertEqual(result.usage.errorRequests, 1)
+        XCTAssertEqual(result.quota.remainingToday, 4990)
+    }
+
+    func testMediaResultsDecodeVerdictFields() throws {
+        let video: [String: Any] = [
+            "frames_analyzed": 2, "duration_seconds": 4.5,
+            "frame_results": [[
+                "frame_index": 0, "timestamp_s": 1.5, "risk_score": 0.7, "severity": "high",
+                "vision": [
+                    "extracted_text": "", "visual_categories": ["violence"], "visual_severity": "high",
+                    "visual_confidence": 0.9, "visual_description": "x", "contains_text": false, "contains_faces": true,
+                ],
+            ]],
+            "categories": ["violence"],
+            "flagged_timestamps": [["timestamp_s": 1.5, "reason": "violence", "severity": "high"]],
+            "overall_risk_score": 0.7, "overall_severity": "high",
+            "detected": true, "confidence": 0.9, "recommended_action": "flag_for_review", "rationale": "violence",
+        ]
+        let result = try JSONDecoder().decode(VideoAnalysisResult.self, from: jsonData(video))
+        XCTAssertEqual(result.frameResults.first?.timestampSeconds, 1.5)
+        XCTAssertEqual(result.flaggedTimestamps.count, 1)
+        XCTAssertEqual(result.categories, ["violence"])
+        XCTAssertTrue(result.recommendedAction.isActionable)
+    }
+
+    func testMimeTypeForFilename() {
+        XCTAssertEqual(Tuteliq.mimeType(forFilename: "clip.MP4"), "video/mp4")
+        XCTAssertEqual(Tuteliq.mimeType(forFilename: "anim.gif"), "image/gif")
+        XCTAssertEqual(Tuteliq.mimeType(forFilename: "voice.m4a"), "audio/m4a")
+        XCTAssertNil(Tuteliq.mimeType(forFilename: "notes.txt"))
+    }
+
+    func testGetEncryptionKeyReturnsNilOn404() async throws {
+        let client = try makeClient(maxRetries: 1) { _ in
+            self.mockResponse(statusCode: 404, json: ["error": ["code": "NOT_FOUND", "message": "No key"]])
+        }
+        let key = try await client.getEncryptionKey()
+        XCTAssertNil(key)
+    }
+
+    func testListIncidentsBuildsQueryAndDecodes() async throws {
+        var url: URL?
+        let client = try makeClient { request in
+            url = request.url
+            return self.mockResponse(json: [
+                "incidents": [[
+                    "id": "inc_1", "risk_category": "bullying", "risk_level": "high", "confidence_score": 0.9,
+                    "detected_patterns": ["exclusion"], "source": "text", "status": "new",
+                    "created_at": "2026-10-01T00:00:00Z", "summary": "text", "_e2e_envelope_fields": ["summary"],
+                ]],
+                "next_cursor": NSNull(), "total_returned": 1,
+            ])
+        }
+        let page = try await client.listIncidents(ListIncidentsInput(
+            severity: .high, status: .new, externalId: "ext 1", limit: 10, includeSummary: true
+        ))
+        let items = try URLComponents(url: XCTUnwrap(url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertTrue(items.contains(URLQueryItem(name: "severity", value: "high")))
+        XCTAssertTrue(items.contains(URLQueryItem(name: "external_id", value: "ext 1")))
+        XCTAssertTrue(items.contains(URLQueryItem(name: "include_summary", value: "true")))
+        XCTAssertNil(page.nextCursor)
+        XCTAssertEqual(page.incidents.first?.e2eEnvelopeFields, ["summary"])
+    }
+
+    func testCreatePolicyRuleBodyShape() async throws {
+        var body: [String: Any] = [:]
+        let rule: [String: Any] = [
+            "id": "r1", "name": "Escalate", "enabled": true, "endpoints": ["grooming"],
+            "conditions": ["min_severity": "critical"], "action": ["type": "escalate", "escalate_to": "team"],
+            "priority": 0, "created_at": "2026-10-01", "updated_at": "2026-10-01",
+        ]
+        let client = try capturingClient(response: ["success": true, "rule": rule]) { body = $0 }
+
+        let result = try await client.createPolicyRule(CreatePolicyRuleInput(
+            name: "Escalate",
+            endpoints: ["grooming"],
+            conditions: PolicyRuleConditions(minSeverity: .critical),
+            action: PolicyRuleAction(type: .escalate, escalateTo: "team")
+        ))
+        XCTAssertEqual((body["conditions"] as? [String: Any])?["min_severity"] as? String, "critical")
+        XCTAssertEqual((body["action"] as? [String: Any])?["escalate_to"] as? String, "team")
+        XCTAssertNil((body["conditions"] as? [String: Any])?["min_risk_score"])
+        XCTAssertEqual(result.rule.action.type, .escalate)
     }
 
     // MARK: - Keychain Storage
@@ -828,7 +1169,7 @@ final class TuteliqTests: XCTestCase {
 
     func testDocumentTypeEnum() {
         XCTAssertEqual(DocumentType.passport.rawValue, "passport")
-        XCTAssertEqual(DocumentType.idCard.rawValue, "id_card")
+        XCTAssertEqual(DocumentType.nationalId.rawValue, "national_id")
         XCTAssertEqual(DocumentType.driversLicense.rawValue, "drivers_license")
     }
 
@@ -841,10 +1182,10 @@ final class TuteliqTests: XCTestCase {
     func testVerificationSessionStatusEnum() {
         XCTAssertEqual(VerificationSessionStatus.pending.rawValue, "pending")
         XCTAssertEqual(VerificationSessionStatus.inProgress.rawValue, "in_progress")
+        XCTAssertEqual(VerificationSessionStatus.documentRequired.rawValue, "document_required")
         XCTAssertEqual(VerificationSessionStatus.completed.rawValue, "completed")
         XCTAssertEqual(VerificationSessionStatus.failed.rawValue, "failed")
         XCTAssertEqual(VerificationSessionStatus.expired.rawValue, "expired")
-        XCTAssertEqual(VerificationSessionStatus.cancelled.rawValue, "cancelled")
     }
 
     func testCreateVerificationSessionInput() {
@@ -856,115 +1197,92 @@ final class TuteliqTests: XCTestCase {
     func testVerificationSessionDecoding() throws {
         let json: [String: Any] = [
             "session_id": "vs_abc123",
-            "mobile_url": "https://verify.tuteliq.ai/session/vs_abc123",
-            "expires_at": "2026-03-05T12:00:00Z",
+            "mobile_url": "https://verify.tuteliq.ai/age/?session=vs_abc123&token=t",
+            "expires_at": 1_760_000_000_000,
             "mode": "age",
+            "verification_mode": "full",
+            "recommended_image_width": 1600,
         ]
-        let data = jsonData(json)
-        let session = try JSONDecoder().decode(VerificationSession.self, from: data)
+        let session = try JSONDecoder().decode(VerificationSession.self, from: jsonData(json))
 
         XCTAssertEqual(session.sessionId, "vs_abc123")
-        XCTAssertEqual(session.url, "https://verify.tuteliq.ai/session/vs_abc123")
+        XCTAssertEqual(session.url, "https://verify.tuteliq.ai/age/?session=vs_abc123&token=t")
         XCTAssertEqual(session.mode, .age)
+        XCTAssertEqual(session.expiresAt, 1_760_000_000_000)
+        XCTAssertEqual(session.expiresAtDate, Date(timeIntervalSince1970: 1_760_000_000))
+        XCTAssertEqual(session.recommendedImageWidth, 1600)
     }
 
-    func testAgeVerificationResultDecoding() throws {
-        let json: [String: Any] = [
-            "verification_id": "vrf_123",
-            "status": "verified",
-            "age_bracket": "18-25",
-            "is_minor": false,
-            "credits_used": 10,
-            "liveness": ["valid": true],
-            "face_match": ["matched": true, "confidence": 0.95, "distance": 0.12],
-        ]
-        let data = jsonData(json)
-        let result = try JSONDecoder().decode(AgeVerificationResult.self, from: data)
-
-        XCTAssertEqual(result.verificationId, "vrf_123")
-        XCTAssertEqual(result.status, .verified)
-        XCTAssertEqual(result.ageBracket, "18-25")
-        XCTAssertEqual(result.isMinor, false)
-        XCTAssertEqual(result.creditsUsed, 10)
-        XCTAssertEqual(result.liveness?.valid, true)
-        XCTAssertEqual(result.faceMatch?.matched, true)
-        XCTAssertEqual(result.faceMatch?.confidence, 0.95)
-    }
-
-    func testIdentityVerificationResultDecoding() throws {
-        let json: [String: Any] = [
-            "verification_id": "vrf_456",
-            "status": "verified",
-            "full_name": "John Doe",
-            "date_of_birth": "1990-01-15",
-            "document_type": "passport",
-            "country_code": "US",
-            "credits_used": 15,
-        ]
-        let data = jsonData(json)
-        let result = try JSONDecoder().decode(IdentityVerificationResult.self, from: data)
-
-        XCTAssertEqual(result.verificationId, "vrf_456")
-        XCTAssertEqual(result.status, .verified)
-        XCTAssertEqual(result.fullName, "John Doe")
-        XCTAssertEqual(result.dateOfBirth, "1990-01-15")
-        XCTAssertEqual(result.countryCode, "US")
-    }
-
-    func testVerificationSessionResultDecoding() throws {
+    func testVerificationSessionResultDecodingWithResult() throws {
         let json: [String: Any] = [
             "session_id": "vs_abc123",
             "status": "completed",
-            "created_at": "2026-03-05T10:00:00Z",
-            "expires_at": "2026-03-05T12:00:00Z",
+            "step_progress": "done",
+            "created_at": 1_760_000_000_000,
+            "expires_at": 1_760_001_800_000,
+            "result": [
+                "status": "verified",
+                "age": 24,
+                "is_minor": false,
+                "date_of_birth": "2002-01-15",
+                "face_match": ["matched": true, "confidence": 0.95],
+                "liveness": ["valid": true],
+                "failure_reasons": [] as [String],
+                "document": [
+                    "ocr_confidence": 92,
+                    "first_name": "Anna",
+                    "last_name": "Lindgren",
+                    "document_type": "passport",
+                    "country_code": "SE",
+                    "national_id": ["value": "200201151234", "valid": true, "type": "personnummer", "country_code": "SE"],
+                ],
+            ],
         ]
-        let data = jsonData(json)
-        let result = try JSONDecoder().decode(VerificationSessionResult.self, from: data)
+        let result = try JSONDecoder().decode(VerificationSessionResult.self, from: jsonData(json))
 
-        XCTAssertEqual(result.sessionId, "vs_abc123")
         XCTAssertEqual(result.status, .completed)
+        XCTAssertEqual(result.createdAt, 1_760_000_000_000)
+        XCTAssertEqual(result.result?.status, .verified)
+        XCTAssertEqual(result.result?.age, 24)
+        XCTAssertEqual(result.result?.faceMatch?.matched, true)
+        XCTAssertNil(result.result?.faceMatch?.distance)
+        XCTAssertEqual(result.result?.document?.firstName, "Anna")
+        XCTAssertEqual(result.result?.document?.nationalId?.type, "personnummer")
     }
 
     func testSuccessfulCreateVerificationSession() async throws {
+        var body: [String: Any] = [:]
         var capturedRequest: URLRequest?
         let client = try makeClient { request in
             capturedRequest = request
-            return self.mockResponse(json: [
+            if let data = request.httpBodyStream.map(Self.readAll) ?? request.httpBody {
+                body = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            }
+            return self.mockResponse(statusCode: 201, json: [
                 "session_id": "vs_test123",
-                "mobile_url": "https://verify.tuteliq.ai/session/vs_test123",
-                "expires_at": "2026-03-05T12:00:00Z",
+                "mobile_url": "https://verify.tuteliq.ai/age/?session=vs_test123&token=t",
+                "expires_at": 1_760_000_000_000,
                 "mode": "age",
             ])
         }
 
-        let input = CreateVerificationSessionInput(mode: .age, documentType: .passport)
-        let session = try await client.createVerificationSession(input)
+        let session = try await client.createVerificationSession(
+            CreateVerificationSessionInput(mode: .age, documentType: .nationalId)
+        )
 
         XCTAssertEqual(session.sessionId, "vs_test123")
-        XCTAssertEqual(session.url, "https://verify.tuteliq.ai/session/vs_test123")
-        XCTAssertEqual(session.mode, .age)
         XCTAssertEqual(capturedRequest?.httpMethod, "POST")
+        XCTAssertEqual(body["document_type"] as? String, "national_id")
         XCTAssertTrue(capturedRequest?.url?.path.contains("/api/v1/verify/session") ?? false)
     }
 
-    func testSuccessfulGetVerificationSession() async throws {
-        var capturedRequest: URLRequest?
+    func testCancelVerificationSessionDecodesOk() async throws {
         let client = try makeClient { request in
-            capturedRequest = request
-            return self.mockResponse(json: [
-                "session_id": "vs_test123",
-                "status": "pending",
-                "created_at": "2026-03-05T10:00:00Z",
-                "expires_at": "2026-03-05T12:00:00Z",
-            ])
+            XCTAssertEqual(request.httpMethod, "DELETE")
+            return self.mockResponse(json: ["ok": true])
         }
-
-        let result = try await client.getVerificationSession(id: "vs_test123")
-
-        XCTAssertEqual(result.sessionId, "vs_test123")
-        XCTAssertEqual(result.status, .pending)
-        XCTAssertEqual(capturedRequest?.httpMethod, "GET")
-        XCTAssertTrue(capturedRequest?.url?.path.contains("/api/v1/verify/session/vs_test123") ?? false)
+        let result = try await client.cancelVerificationSession(id: "vs_1")
+        XCTAssertTrue(result.ok)
     }
 
     func testSuccessfulGetAgeVerification() async throws {
@@ -972,8 +1290,10 @@ final class TuteliqTests: XCTestCase {
             self.mockResponse(json: [
                 "verification_id": "vrf_123",
                 "status": "verified",
-                "age_bracket": "18-25",
                 "is_minor": false,
+                "face_matched": true,
+                "liveness_valid": true,
+                "failure_reasons": [] as [String],
                 "created_at": "2026-03-05T10:00:00Z",
             ])
         }
@@ -982,5 +1302,42 @@ final class TuteliqTests: XCTestCase {
 
         XCTAssertEqual(result.verificationId, "vrf_123")
         XCTAssertEqual(result.status, .verified)
+        XCTAssertEqual(result.faceMatched, true)
+        XCTAssertTrue(result.livenessValid)
+    }
+
+    func testSuccessfulGetIdentityVerification() async throws {
+        let client = try makeClient { _ in
+            self.mockResponse(json: [
+                "verification_id": "vrf_456",
+                "status": "needs_review",
+                "face_matched": NSNull(),
+                "face_confidence": 0.61,
+                "liveness_valid": true,
+                "failure_reasons": ["face_match_inconclusive"],
+                "created_at": "2026-03-05T10:00:00Z",
+            ])
+        }
+
+        let result = try await client.getIdentityVerification(id: "vrf_456")
+
+        XCTAssertEqual(result.status, .needsReview)
+        XCTAssertNil(result.faceMatched)
+        XCTAssertEqual(result.faceConfidence, 0.61)
+        XCTAssertEqual(result.failureReasons, ["face_match_inconclusive"])
+    }
+
+    static func readAll(_ stream: InputStream) -> Data {
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let buf = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
+        defer { buf.deallocate() }
+        while stream.hasBytesAvailable {
+            let count = stream.read(buf, maxLength: 4096)
+            guard count > 0 else { break }
+            data.append(buf, count: count)
+        }
+        return data
     }
 }

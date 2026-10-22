@@ -298,10 +298,18 @@ public final class VoiceStreamSession: @unchecked Sendable {
         }
         if let ctx = config.context {
             var contextDict: [String: String] = [:]
-            if let l = ctx.language { contextDict["language"] = l }
-            if let a = ctx.ageGroup { contextDict["age_group"] = a }
-            if let r = ctx.relationship { contextDict["relationship"] = r }
-            if let p = ctx.platform { contextDict["platform"] = p }
+            if let l = ctx.language {
+                contextDict["language"] = l
+            }
+            if let a = ctx.ageGroup {
+                contextDict["age_group"] = a
+            }
+            if let r = ctx.relationship {
+                contextDict["relationship"] = r
+            }
+            if let p = ctx.platform {
+                contextDict["platform"] = p
+            }
             payload["context"] = contextDict
         }
 

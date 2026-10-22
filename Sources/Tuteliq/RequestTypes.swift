@@ -5,15 +5,36 @@ import Foundation
 //
 // These types use JSONEncoder with .convertToSnakeCase, so property names
 // are camelCase here and automatically become snake_case in the JSON output.
-// This replaces the previous [String: Any] + JSONSerialization approach.
+// Optional properties are omitted when nil, so "not set" never reaches the
+// API as an explicit value. Dictionary keys (metadata, message payloads) are
+// not rewritten by the strategy.
 
-/// Bullying detection request body.
-struct BullyingRequest: Encodable {
+/// `options` block shared by the detection endpoints.
+struct DetectionOptions: Encodable {
+    var supportThreshold: String?
+    var includeEvidence: Bool?
+    var verdictOnly: Bool?
+    var flagProfanity: Bool?
+    var flagRiskTerms: Bool?
+
+    /// `nil` when nothing is set, so the request omits `options` entirely.
+    var nilIfEmpty: DetectionOptions? {
+        supportThreshold == nil && includeEvidence == nil && verdictOnly == nil
+            && flagProfanity == nil && flagRiskTerms == nil ? nil : self
+    }
+}
+
+/// Bullying and unsafe detection request body.
+struct TextDetectionRequest: Encodable {
     let text: String
     var context: ContextPayload?
     var externalId: String?
     var customerId: String?
     var metadata: [String: AnyCodable]?
+    var incidentModerationEnabled: Bool?
+    var continuationToken: String?
+    var resetConversation: Bool?
+    var options: DetectionOptions?
 }
 
 /// Grooming detection request body.
@@ -23,20 +44,16 @@ struct GroomingRequest: Encodable {
     var externalId: String?
     var customerId: String?
     var metadata: [String: AnyCodable]?
+    var incidentModerationEnabled: Bool?
+    var continuationToken: String?
+    var resetConversation: Bool?
+    var options: DetectionOptions?
 }
 
 struct GroomingMessagePayload: Encodable {
     let senderRole: String
     let text: String
-}
-
-/// Unsafe content detection request body.
-struct UnsafeRequest: Encodable {
-    let text: String
-    var context: ContextPayload?
-    var externalId: String?
-    var customerId: String?
-    var metadata: [String: AnyCodable]?
+    var senderAge: Int?
 }
 
 /// Emotion analysis request body.
@@ -62,6 +79,7 @@ struct ActionPlanRequest: Encodable {
     var externalId: String?
     var customerId: String?
     var metadata: [String: AnyCodable]?
+    var incidentModerationEnabled: Bool?
 }
 
 /// Incident report request body.
@@ -71,6 +89,7 @@ struct ReportRequest: Encodable {
     var externalId: String?
     var customerId: String?
     var metadata: [String: AnyCodable]?
+    var incidentModerationEnabled: Bool?
 }
 
 struct ReportMessagePayload: Encodable {
@@ -117,9 +136,13 @@ struct DetectionRequest: Encodable {
     let text: String
     var context: ContextPayload?
     var includeEvidence: Bool?
+    var continuationToken: String?
+    var resetConversation: Bool?
     var externalId: String?
     var customerId: String?
     var metadata: [String: AnyCodable]?
+    var incidentModerationEnabled: Bool?
+    var options: DetectionOptions?
 }
 
 /// Multi-endpoint analysis request body.
@@ -127,14 +150,23 @@ struct AnalyseMultiRequest: Encodable {
     let text: String
     let endpoints: [String]
     var context: ContextPayload?
-    var options: AnalyseMultiOptions?
+    var options: DetectionOptions?
     var externalId: String?
     var customerId: String?
     var metadata: [String: AnyCodable]?
+    var incidentModerationEnabled: Bool?
 }
 
-struct AnalyseMultiOptions: Encodable {
-    var includeEvidence: Bool?
+/// Synthetic text detection request body.
+struct SyntheticTextRequest: Encodable {
+    let text: String
+    var context: ContextPayload?
+    var externalId: String?
+    var customerId: String?
+    var metadata: [String: AnyCodable]?
+    var incidentModerationEnabled: Bool?
+    var bypassCache: Bool?
+    var options: DetectionOptions?
 }
 
 /// Context payload shared across analysis requests.
@@ -143,7 +175,10 @@ struct ContextPayload: Encodable {
     var ageGroup: String?
     var relationship: String?
     var platform: String?
+    var country: String?
+    var priorMessages: [PriorMessage]?
     var childAge: Int?
+    var participantAge: Int?
 }
 
 /// Batch analysis request body.
@@ -165,9 +200,15 @@ struct BatchItemData: Encodable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        if let text = text { try container.encode(text, forKey: .text) }
-        if let messages = messages { try container.encode(messages, forKey: .messages) }
-        if let context = context { try container.encode(context, forKey: .context) }
+        if let text = text {
+            try container.encode(text, forKey: .text)
+        }
+        if let messages = messages {
+            try container.encode(messages, forKey: .messages)
+        }
+        if let context = context {
+            try container.encode(context, forKey: .context)
+        }
     }
 
     enum CodingKeys: String, CodingKey {

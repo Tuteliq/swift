@@ -22,7 +22,7 @@ public final class Tuteliq: @unchecked Sendable {
     // MARK: - Properties
 
     private let apiKey: String
-    private let baseURL: URL
+    let baseURL: URL
     private let session: URLSession
     private let timeout: TimeInterval
     private let maxRetries: Int

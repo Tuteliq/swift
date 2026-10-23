@@ -1200,7 +1200,7 @@ final class TuteliqTests: XCTestCase {
         let json: [String: Any] = [
             "session_id": "vs_abc123",
             "mobile_url": "https://verify.tuteliq.ai/age/?session=vs_abc123&token=t",
-            "expires_at": 1_760_000_000_000,
+            "expires_at": Int64(1_760_000_000_000),
             "mode": "age",
             "verification_mode": "full",
             "recommended_image_width": 1600,
@@ -1220,8 +1220,8 @@ final class TuteliqTests: XCTestCase {
             "session_id": "vs_abc123",
             "status": "completed",
             "step_progress": "done",
-            "created_at": 1_760_000_000_000,
-            "expires_at": 1_760_001_800_000,
+            "created_at": Int64(1_760_000_000_000),
+            "expires_at": Int64(1_760_001_800_000),
             "result": [
                 "status": "verified",
                 "age": 24,
@@ -1263,7 +1263,7 @@ final class TuteliqTests: XCTestCase {
             return self.mockResponse(statusCode: 201, json: [
                 "session_id": "vs_test123",
                 "mobile_url": "https://verify.tuteliq.ai/age/?session=vs_test123&token=t",
-                "expires_at": 1_760_000_000_000,
+                "expires_at": Int64(1_760_000_000_000),
                 "mode": "age",
             ])
         }

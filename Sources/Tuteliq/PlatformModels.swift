@@ -897,7 +897,7 @@ public struct PlatformCount: Codable, Sendable {
 public struct IncidentsOverview: Codable, Sendable {
     public let timeframe: IncidentTimeframe
     public let totalIncidents: Int
-    /// High/critical incidents in `new` or `reviewing`: the actionable triage queue.
+    /// High/critical incidents not yet triaged (status `new`): the actionable triage queue.
     public let requiresReviewCount: Int
     public let last24hCount: Int
     public let last7dCount: Int

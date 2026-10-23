@@ -16,7 +16,7 @@ final class LivenessChallengeAndSubmitTests: XCTestCase {
             return helpers.mockResponse(json: [
                 "nonce": "abc-123",
                 "signature": "sig-xyz",
-                "expires_at": 1_715_000_300_000,
+                "expires_at": Int64(1_715_000_300_000),
                 "challenges": ["center", "left", "right", "blink", "smile"],
             ])
         }

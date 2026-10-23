@@ -64,6 +64,59 @@ final class SessionLinkTests: XCTestCase {
             XCTAssertFalse(text.contains("secret-token-123"), text)
         }
     }
+
+    func testIgnoresARedirectCarryingAUserNameOrPassword() throws {
+        for redirect in ["https%3A%2F%2Fu%3Ap%40evil.example%2Fdone", "https%3A%2F%2Fu%40evil.example%2Fdone"] {
+            let credentials = try VerificationSessionCredentials(
+                sessionURL: "https://verify.tuteliq.ai/age/?session=s1&token=t1&redirect=\(redirect)"
+            )
+            XCTAssertNil(credentials.redirectURL, redirect)
+        }
+    }
+}
+
+// MARK: - Rate limiting
+
+/// `Retry-After` comes from the network: no value may crash the app.
+final class RetryAfterTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func retryAfter(_ header: String?) -> TimeInterval?? {
+        guard case let .rateLimited(retryAfter) = VerificationSessionClient.error(status: 429, body: Data(), retryAfter: header, now: now) else {
+            return nil
+        }
+        return .some(retryAfter)
+    }
+
+    func testDelaySeconds() {
+        XCTAssertEqual(retryAfter("12"), 12)
+        XCTAssertEqual(retryAfter("0"), 0)
+    }
+
+    func testValuesThatAreNotADelayAreIgnored() {
+        for header in ["inf", "nan", "-5", "1.5", "1e3", "abc", "", " 12"] {
+            XCTAssertEqual(retryAfter(header), .some(nil), header)
+        }
+    }
+
+    func testHugeDelaysAreCapped() {
+        XCTAssertEqual(retryAfter("3000000000"), 86400)
+        XCTAssertEqual(retryAfter("99999999999999999999999999999999"), 86400)
+    }
+
+    func testHTTPDate() {
+        XCTAssertEqual(retryAfter("Fri, 15 Jan 2027 08:00:30 GMT"), 30)
+        // A date already past means "now".
+        XCTAssertEqual(retryAfter("Fri, 15 Jan 2027 07:00:00 GMT"), 0)
+    }
+
+    func testTheMessageNeverCrashes() {
+        for value: TimeInterval in [.infinity, -.infinity, .nan, 1e30, -5, 12.7] {
+            XCTAssertFalse(VerificationError.rateLimited(retryAfter: value).localizedDescription.isEmpty)
+        }
+        XCTAssertEqual(VerificationError.rateLimited(retryAfter: 12.2).localizedDescription, "Too many attempts. Try again in 13 seconds.")
+        XCTAssertEqual(VerificationError.rateLimited(retryAfter: .nan).localizedDescription, "Too many attempts. Try again shortly.")
+    }
 }
 
 // MARK: - Redaction
@@ -176,9 +229,10 @@ final class SessionClientCoverageTests: XCTestCase {
 
     func testTheOverrideIsWhereRequestsGo() async throws {
         var url: URL?
-        SessionMockURLProtocol.handler = { request, _ in url = request.url; return (200, Data(#"{"mode":"full"}"#.utf8)) }
-        _ = try? await client(link: "https://verify.staging.example/age/?session=s1&token=t1", apiBaseURL: try XCTUnwrap(URL(string: "https://api.staging.example"))).fetchMode()
+        SessionMockURLProtocol.handler = { request, _ in url = request.url; return (200, Data(#"{"verification_mode":"full"}"#.utf8)) }
+        let mode = try await client(link: "https://verify.staging.example/age/?session=s1&token=t1", apiBaseURL: XCTUnwrap(URL(string: "https://api.staging.example"))).fetchMode()
         XCTAssertEqual(url?.absoluteString, "https://api.staging.example/api/v1/verify/session/s1/mode")
+        XCTAssertEqual(mode.verificationMode, .full)
     }
 
     func testASessionIdIsEncodedOnceAndStaysOneSegment() async {
@@ -237,12 +291,17 @@ final class SessionClientCoverageTests: XCTestCase {
     /// A misconfigured base URL or a proxy answers 404 too; only the API's own
     /// route-not-found means chip validation is not offered.
     func testValidateChipThrowsForAnyOther404() async throws {
-        for body in [#"{"error":{"code":"OTHER","message":"x"}}"#, "<html>Not Found</html>"] {
+        for (body, code) in [(#"{"error":{"code":"OTHER","message":"x"}}"#, "OTHER"), ("<html>Not Found</html>", nil)] {
             SessionMockURLProtocol.handler = { _, _ in (404, Data(body.utf8)) }
             do {
                 _ = try await client().validateChip([.dg1: Data([0x61])], documentType: .passport)
                 XCTFail("Expected an error for \(body)")
-            } catch {}
+            } catch let VerificationError.server(actualCode, _, statusCode) {
+                XCTAssertEqual(actualCode, code, body)
+                XCTAssertEqual(statusCode, 404, body)
+            } catch {
+                XCTFail("Expected a 404 server error for \(body), got \(error)")
+            }
         }
     }
 

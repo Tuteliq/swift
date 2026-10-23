@@ -228,7 +228,7 @@ public final class VerificationSessionClient: Sendable {
         }
     }
 
-    static func error(status: Int, body: Data, retryAfter: String?) -> VerificationError {
+    static func error(status: Int, body: Data, retryAfter: String?, now: Date = Date()) -> VerificationError {
         struct Envelope: Decodable {
             struct Body: Decodable {
                 let code: String?
@@ -253,9 +253,24 @@ public final class VerificationSessionClient: Sendable {
             return .sessionExpired
         }
         if status == 429 {
-            return .rateLimited(retryAfter: retryAfter.flatMap(TimeInterval.init))
+            return .rateLimited(retryAfter: retryAfter.flatMap { retryDelay($0, now: now) })
         }
         return .server(code: code, message: message, statusCode: status)
+    }
+
+    /// `Retry-After` is whole seconds or an HTTP date (RFC 9110 §10.2.3). Anything
+    /// else is ignored, and the delay is capped at a day.
+    static func retryDelay(_ header: String, now: Date) -> TimeInterval? {
+        let maxDelay: TimeInterval = 86400
+        if !header.isEmpty, header.utf8.allSatisfy({ (0x30 ... 0x39).contains($0) }) {
+            return min(TimeInterval(header) ?? maxDelay, maxDelay)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "GMT")
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        guard let date = formatter.date(from: header) else { return nil }
+        return min(max(date.timeIntervalSince(now), 0), maxDelay)
     }
 }
 

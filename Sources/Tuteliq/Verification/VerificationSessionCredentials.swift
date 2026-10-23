@@ -16,6 +16,10 @@ public struct VerificationSessionCredentials: Sendable, Equatable {
     /// Company name to show in the UI, when the session URL carries one.
     public let companyName: String?
     /// Where the hosted flow would send the user afterwards (`https` only).
+    ///
+    /// It comes from the link, so it is not verified: anyone can craft a link
+    /// with any `redirect`. Prefer the redirect you configured for your account,
+    /// and never open this URL without checking it against that.
     public let redirectURL: URL?
 
     public init(
@@ -84,7 +88,9 @@ public struct VerificationSessionCredentials: Sendable, Equatable {
         let firstSegment = components.path.split(separator: "/").first.map(String.init)
         let mode: VerificationMode = firstSegment == "identity" ? .identity : .age
 
-        let redirect = value("redirect").flatMap(URL.init(string:)).flatMap { $0.scheme == "https" ? $0 : nil }
+        let redirect = value("redirect").flatMap(URL.init(string:)).flatMap {
+            $0.scheme?.lowercased() == "https" && $0.host != nil && $0.user == nil && $0.password == nil ? $0 : nil
+        }
 
         self.init(
             sessionId: session,

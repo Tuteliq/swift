@@ -905,8 +905,28 @@ public struct TranscriptionResult: Codable, Sendable {
     public let language: String
     /// Audio duration in seconds.
     public let duration: Double
-    /// Timestamped segments.
+    /// Timestamped segments. Empty when the audio has no intelligible speech.
     public let segments: [TranscriptionSegment]
+
+    public init(text: String, language: String, duration: Double, segments: [TranscriptionSegment]) {
+        self.text = text
+        self.language = language
+        self.duration = duration
+        self.segments = segments
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case text, language, duration, segments
+    }
+
+    /// The API leaves `segments` out when there is no speech, and out of a video's transcription.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        text = try container.decode(String.self, forKey: .text)
+        language = try container.decode(String.self, forKey: .language)
+        duration = try container.decode(Double.self, forKey: .duration)
+        segments = try container.decodeIfPresent([TranscriptionSegment].self, forKey: .segments) ?? []
+    }
 }
 
 /// Input for voice analysis.
@@ -1269,8 +1289,9 @@ public struct DetectionResult: Codable, Sendable {
     /// Human-readable expansion of `recommendedAction`. Do not branch on it.
     public let actionDetail: String?
     public let rationale: String?
-    public let language: String
-    public let languageStatus: LanguageStatus
+    /// Absent when no supported language was resolved (an unsupported language, or a very short text).
+    public let language: String?
+    public let languageStatus: LanguageStatus?
     /// Omitted when `includeEvidence` is false, including implicitly via `verdictOnly`.
     public let evidence: [DetectionEvidence]?
     public let ageCalibration: AgeCalibration?
@@ -1389,8 +1410,44 @@ public struct AnalyseMultiSummary: Codable, Sendable {
 }
 
 /// Result from multi-endpoint analysis.
+/// One detector's verdict inside ``AnalyseMultiResult``.
+///
+/// Leaner than ``DetectionResult``: a multi result carries no language, and
+/// `confidence` and `riskScore` only when that detector reports them.
+public struct AnalyseMultiEndpointResult: Codable, Sendable {
+    public let endpoint: String
+    public let detected: Bool
+    public let severity: Double
+    public let confidence: Double?
+    public let riskScore: Double?
+    /// `none` / `low` / `medium` / `high` / `critical`.
+    public let level: String
+    public let categories: [DetectionCategory]
+    public let recommendedAction: RecommendedAction
+    /// Human-readable expansion of `recommendedAction`. Do not branch on it.
+    public let actionDetail: String?
+    public let rationale: String?
+    /// Omitted when `includeEvidence` is false.
+    public let evidence: [DetectionEvidence]?
+    public let ageCalibration: AgeCalibration?
+    public let crossEndpointModifier: Double?
+    public let creditsUsed: Int?
+    public let processingTimeMs: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case endpoint, detected, severity, confidence, level, categories, rationale, evidence
+        case riskScore = "risk_score"
+        case recommendedAction = "recommended_action"
+        case actionDetail = "action_detail"
+        case ageCalibration = "age_calibration"
+        case crossEndpointModifier = "cross_endpoint_modifier"
+        case creditsUsed = "credits_used"
+        case processingTimeMs = "processing_time_ms"
+    }
+}
+
 public struct AnalyseMultiResult: Codable, Sendable {
-    public let results: [DetectionResult]
+    public let results: [AnalyseMultiEndpointResult]
     public let summary: AnalyseMultiSummary
     public let crossEndpointModifier: Double?
     public let creditsUsed: Int?

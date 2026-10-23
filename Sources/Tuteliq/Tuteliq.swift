@@ -1875,35 +1875,49 @@ public final class Tuteliq: @unchecked Sendable {
         for attempt in 0 ..< maxRetries {
             try Task.checkCancellation()
 
+            let data: Data
             do {
-                let data = try await performRequest(method: method, path: path, bodyData: bodyData, query: query)
-
-                // Cache GET responses
-                if let cacheKey = cacheKey {
-                    setCachedData(data, for: cacheKey, ttl: cacheTTL)
-                }
-
-                return try decoder.decode(T.self, from: data)
-            } catch let error as TuteliqError {
-                switch error {
-                case .authenticationError, .validationError, .notFoundError, .subscriptionError, .quotaExceededError:
-                    throw error
-                default:
-                    lastError = error
-                }
-            } catch is CancellationError {
-                throw CancellationError()
+                data = try await performRequest(method: method, path: path, bodyData: bodyData, query: query)
             } catch {
-                lastError = error
+                lastError = try retryable(error)
+                try await backOff(after: attempt)
+                continue
             }
 
-            if attempt < maxRetries - 1 {
-                let delay = retryDelay * pow(2.0, Double(attempt))
-                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            // Not retried: the request went through, and sending it again would
+            // repeat a paid analysis. Cached only once it decodes.
+            let value = try decoder.decode(T.self, from: data)
+            if let cacheKey = cacheKey {
+                setCachedData(data, for: cacheKey, ttl: cacheTTL)
             }
+            return value
         }
 
         throw lastError ?? TuteliqError.unknownError("Request failed after \(maxRetries) attempts")
+    }
+
+    /// Returns `error` when another attempt could succeed, and rethrows it when none can.
+    private func retryable(_ error: Error) throws -> Error {
+        switch error {
+        case is CancellationError:
+            throw error
+        case let error as TuteliqError:
+            switch error {
+            case .authenticationError, .validationError, .notFoundError, .subscriptionError, .quotaExceededError:
+                throw error
+            default:
+                return error
+            }
+        default:
+            return error
+        }
+    }
+
+    private func backOff(after attempt: Int) async throws {
+        if attempt < maxRetries - 1 {
+            let delay = retryDelay * pow(2.0, Double(attempt))
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+        }
     }
 
     private func performRequest(
@@ -1992,26 +2006,17 @@ public final class Tuteliq: @unchecked Sendable {
         for attempt in 0 ..< maxRetries {
             try Task.checkCancellation()
 
+            let data: Data
             do {
-                let data = try await performMultipartRequest(path: path, body: body, boundary: boundary)
-                return try decoder.decode(T.self, from: data)
-            } catch let error as TuteliqError {
-                switch error {
-                case .authenticationError, .validationError, .notFoundError, .subscriptionError, .quotaExceededError:
-                    throw error
-                default:
-                    lastError = error
-                }
-            } catch is CancellationError {
-                throw CancellationError()
+                data = try await performMultipartRequest(path: path, body: body, boundary: boundary)
             } catch {
-                lastError = error
+                lastError = try retryable(error)
+                try await backOff(after: attempt)
+                continue
             }
 
-            if attempt < maxRetries - 1 {
-                let delay = retryDelay * pow(2.0, Double(attempt))
-                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            }
+            // Not retried: the upload went through, and sending it again would repeat a paid analysis.
+            return try decoder.decode(T.self, from: data)
         }
 
         throw lastError ?? TuteliqError.unknownError("Request failed after \(maxRetries) attempts")
@@ -2081,7 +2086,9 @@ public final class Tuteliq: @unchecked Sendable {
         return data
     }
 
-    private static let quotaErrorCodes: Set<String> = ["RATE_2003", "QUOTA_EXCEEDED"]
+    /// An exhausted allowance: `SUB_7004` (message limit reached) and `SUB_7005` (credits
+    /// depleted) are what the API sends today.
+    private static let quotaErrorCodes: Set<String> = ["SUB_7004", "SUB_7005", "RATE_2003", "QUOTA_EXCEEDED"]
 
     /// The MIME type the SDK sends for an upload with this filename, or `nil` for an
     /// unrecognised extension.

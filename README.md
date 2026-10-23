@@ -82,8 +82,12 @@ Changes that need an edit:
   - `VerificationSession.expiresAt` is `Int64`, epoch milliseconds (was `String`). `expiresAtDate` gives a `Date`.
   - `VerificationSessionResult.result` is `VerificationResult?` (was `AnyCodable?`), and `.createdAt` and `.expiresAt` are `Int64?` epoch milliseconds (were `String?`).
   - `PolicyResult.config`, `PolicyResult.message` and `UsageQuotaResult.apiKeyId` are optional, because the API can omit them. Unwrap them where you read them.
+  - `DetectionResult.language` and `.languageStatus` are optional: the fraud and extended-harm detectors leave them out when no supported language is resolved.
+  - `AnalyseMultiResult.results` is `[AnalyseMultiEndpointResult]` (was `[DetectionResult]`, which never decoded a real multi response). Its `confidence` and `riskScore` are optional, because not every detector reports them inside a multi result.
 - **Removed types.** `AgeVerificationResult`, `IdentityVerificationResult` and `VideoSafetyFinding` were not returned by any 2.x call. Use `VerificationRetrieveResult`, `IdentityRetrieveResult` and `VideoAnalysisResult.frameResults` instead.
 - **`LivenessChallenge.expiresAt`** is `Int64`, so it decodes on 32-bit watchOS.
+- **A monthly allowance or credit balance that runs out** (`SUB_7004`, `SUB_7005`) throws `TuteliqError.quotaExceededError` and is not retried. In 2.x it was a `rateLimitError`.
+- **A response that doesn't decode** throws its `DecodingError` straight away. 2.x sent the request again, repeating a paid analysis.
 
 ---
 
@@ -459,7 +463,7 @@ print(audio.audioStats?.flatFactor ?? 0, audio.spectralSignals ?? [])
 let video = try await tuteliq.detectSyntheticVideo(
     DetectSyntheticMediaInput(file: videoData, filename: "clip.mp4", maxFrames: 10)
 )
-print(video.temporalConsistency?.identityConsistencyScore ?? 0, video.lipSync?.correlation ?? 0)
+print(video.temporalConsistency?.identityConsistency ?? 0, video.lipSync?.correlation ?? 0)
 ```
 
 Classifications are `.confirmedSynthetic`, `.suspectedSynthetic`, `.unknown` and `.confirmedAuthentic`. Verdicts are cached for an hour by input hash. Pass `bypassCache: true` to force a fresh evaluation.

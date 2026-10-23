@@ -243,6 +243,7 @@ public struct SyntheticImageResult: Codable, Sendable {
     public let recommendedAction: RecommendedAction
     public let actionDetail: String?
     public let rationale: String
+    /// The visual (semantic) analysis. Sent by the API as `semantic_analysis`.
     public let vision: SyntheticVisionResult
     public let metadataAnalysis: MetadataAnalysis
     /// Present only when a C2PA manifest is found.
@@ -263,7 +264,8 @@ public struct SyntheticImageResult: Codable, Sendable {
         case riskScore = "risk_score"
         case recommendedAction = "recommended_action"
         case actionDetail = "action_detail"
-        case rationale, vision
+        case rationale
+        case vision = "semantic_analysis"
         case metadataAnalysis = "metadata_analysis"
         case provenance
         case forensicSignals = "forensic_signals"
@@ -366,22 +368,19 @@ public struct AnomalousFramePair: Codable, Sendable {
 
 /// Temporal face consistency across video frames.
 public struct TemporalConsistency: Codable, Sendable {
+    /// Overall temporal consistency (0 to 1).
+    public let score: Double
+    public let identityConsistency: Double
+    public let landmarkStability: Double
     public let framesWithFaces: Int
-    public let totalFrames: Int
-    public let identityConsistencyScore: Double
-    public let landmarkStabilityScore: Double
-    public let temporalConsistencyScore: Double
-    public let anomalousFramePairs: [AnomalousFramePair]
-    public let signals: [String]
+    public let anomalousPairs: [AnomalousFramePair]
 
     enum CodingKeys: String, CodingKey {
+        case score
+        case identityConsistency = "identity_consistency"
+        case landmarkStability = "landmark_stability"
         case framesWithFaces = "frames_with_faces"
-        case totalFrames = "total_frames"
-        case identityConsistencyScore = "identity_consistency_score"
-        case landmarkStabilityScore = "landmark_stability_score"
-        case temporalConsistencyScore = "temporal_consistency_score"
-        case anomalousFramePairs = "anomalous_frame_pairs"
-        case signals
+        case anomalousPairs = "anomalous_pairs"
     }
 }
 
@@ -391,13 +390,11 @@ public struct LipSyncResult: Codable, Sendable {
     public let correlation: Double
     public let hasSilentMouthMovement: Bool
     public let hasVoiceWithoutMovement: Bool
-    public let signals: [String]
 
     enum CodingKeys: String, CodingKey {
         case correlation
         case hasSilentMouthMovement = "has_silent_mouth_movement"
         case hasVoiceWithoutMovement = "has_voice_without_movement"
-        case signals
     }
 }
 

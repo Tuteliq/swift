@@ -251,11 +251,29 @@ public final class Tuteliq: @unchecked Sendable {
     /// This is a client-side convenience that calls both endpoints concurrently
     /// and merges the results. For server-side batching, use ``batchAnalyze(_:)``.
     ///
+    /// Only `.bullying` and `.unsafe` can be combined here. Any other
+    /// ``AnalysisType`` in `include`, or an empty `include`, throws
+    /// ``TuteliqError/validationError(_:details:)`` before a request is sent: call
+    /// ``detectGrooming(_:)``, ``analyzeEmotions(_:)``, ``analyzeVoice(_:)`` or
+    /// ``analyzeImage(_:)`` directly for those.
+    ///
     /// - Parameter input: Combined analysis input.
     /// - Returns: Merged result with overall risk level and individual results.
     /// - Throws: ``TuteliqError`` on failure.
     public func analyze(_ input: AnalyzeInput) async throws -> AnalyzeResult {
         let include = input.include ?? [.bullying, .unsafe]
+        // A type that is skipped silently would read as "no concerns" for
+        // content that was never analysed.
+        let unsupported = include.filter { $0 != .bullying && $0 != .unsafe }
+        if !unsupported.isEmpty {
+            let names = unsupported.map(\.rawValue).joined(separator: ", ")
+            throw TuteliqError.validationError(
+                "analyze(include:) supports only .bullying and .unsafe; call the dedicated method for: \(names)"
+            )
+        }
+        if include.isEmpty {
+            throw TuteliqError.validationError("analyze(include:) needs at least one of .bullying or .unsafe")
+        }
         let metadataRaw = input.metadata?.mapValues { $0.value }
 
         let bullyingInput = DetectBullyingInput(
@@ -902,7 +920,9 @@ public final class Tuteliq: @unchecked Sendable {
             context: contextPayload(input.context),
             options: DetectionOptions(
                 supportThreshold: input.supportThreshold?.rawValue,
-                includeEvidence: input.includeEvidence ? true : nil,
+                // Passed through unchanged: the API defaults evidence on, so
+                // an explicit false must reach it.
+                includeEvidence: input.includeEvidence,
                 verdictOnly: input.verdictOnly ? true : nil
             ).nilIfEmpty,
             externalId: input.externalId,
@@ -1173,14 +1193,16 @@ public final class Tuteliq: @unchecked Sendable {
 
     /// Submit verification documents for processing.
     ///
-    /// Wraps `POST /api/v1/verify/submit`. Provide either a passport image
-    /// **or** an ID front + back. Selfie and `livenessToken` are required.
+    /// Wraps `POST /api/v1/verify/submit`. The document front is always
+    /// required (a passport's bio page); the back is `idBack`, or `passport`
+    /// in its place. Selfie and `livenessToken` are required.
     ///
     /// ```swift
     /// let challenge = try await tuteliq.getLivenessChallenge()
     /// // ... run challenges in order, build a liveness token JSON ...
     /// let input = SubmitVerificationInput(
-    ///     passport: passportJPEG,
+    ///     idFront: bioPageJPEG,
+    ///     passport: passportPageJPEG,
     ///     selfie: selfieJPEG,
     ///     livenessToken: tokenJSON,
     ///     livenessFrames: capturedFrames
@@ -1190,15 +1212,18 @@ public final class Tuteliq: @unchecked Sendable {
     ///
     /// - Parameter input: Document buffers, selfie, liveness token, optional frames.
     /// - Returns: A `VerificationSubmitResult` with status, age, document fields, face match, liveness.
+    /// - Throws: ``TuteliqError/validationError(_:details:)`` before sending
+    ///   when neither `idBack` nor `passport` is provided.
     public func submitVerification(_ input: SubmitVerificationInput) async throws -> VerificationSubmitResult {
+        guard input.idBack != nil || input.passport != nil else {
+            throw TuteliqError.validationError("Provide idBack, or passport in its place")
+        }
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
 
+        body.appendMultipart(boundary: boundary, name: "id_front", filename: "id_front.jpg", mimeType: "image/jpeg", data: input.idFront)
         if let data = input.passport {
             body.appendMultipart(boundary: boundary, name: "passport", filename: "passport.jpg", mimeType: "image/jpeg", data: data)
-        }
-        if let data = input.idFront {
-            body.appendMultipart(boundary: boundary, name: "id_front", filename: "id_front.jpg", mimeType: "image/jpeg", data: data)
         }
         if let data = input.idBack {
             body.appendMultipart(boundary: boundary, name: "id_back", filename: "id_back.jpg", mimeType: "image/jpeg", data: data)
@@ -1253,7 +1278,8 @@ public final class Tuteliq: @unchecked Sendable {
         VoiceStreamSession(
             apiKey: apiKey,
             config: config,
-            handlers: handlers
+            handlers: handlers,
+            baseURL: VoiceStreamSession.streamURL(apiBaseURL: baseURL)
         )
     }
 
@@ -1348,68 +1374,6 @@ public final class Tuteliq: @unchecked Sendable {
         }
         let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
         return try await request(method: "GET", path: "/api/v1/account/audit-logs\(query)")
-    }
-
-    // MARK: - Breach Management (GDPR Article 33/34)
-
-    /// Log a new data breach.
-    ///
-    /// - Parameter input: Breach details.
-    /// - Returns: The created breach record.
-    public func logBreach(_ input: LogBreachInput) async throws -> LogBreachResult {
-        try await request(method: "POST", path: "/api/v1/admin/breach", body: [
-            "title": AnyCodable(input.title),
-            "description": AnyCodable(input.description),
-            "severity": AnyCodable(input.severity.rawValue),
-            "affected_user_ids": AnyCodable(input.affectedUserIds),
-            "data_categories": AnyCodable(input.dataCategories),
-            "reported_by": AnyCodable(input.reportedBy),
-        ])
-    }
-
-    /// List data breaches.
-    ///
-    /// - Parameters:
-    ///   - status: Optional filter by breach status.
-    ///   - limit: Maximum number of results.
-    /// - Returns: List of breach records.
-    public func listBreaches(status: BreachStatus? = nil, limit: Int? = nil) async throws -> BreachListResult {
-        var components: [String] = []
-        if let status = status {
-            components.append("status=\(status.rawValue)")
-        }
-        if let limit = limit {
-            components.append("limit=\(limit)")
-        }
-        let query = components.isEmpty ? "" : "?\(components.joined(separator: "&"))"
-        return try await request(method: "GET", path: "/api/v1/admin/breach\(query)")
-    }
-
-    /// Get a single breach by ID.
-    ///
-    /// - Parameter id: Breach ID.
-    /// - Returns: The breach record.
-    public func getBreach(id: String) async throws -> BreachResult {
-        try await request(method: "GET", path: "/api/v1/admin/breach/\(pathSegment(id, name: "Breach ID"))")
-    }
-
-    /// Update a breach's status.
-    ///
-    /// - Parameters:
-    ///   - id: Breach ID.
-    ///   - input: Status update details.
-    /// - Returns: The updated breach record.
-    public func updateBreachStatus(id: String, _ input: UpdateBreachInput) async throws -> BreachResult {
-        var body: [String: AnyCodable] = [
-            "status": AnyCodable(input.status.rawValue),
-        ]
-        if let notificationStatus = input.notificationStatus {
-            body["notification_status"] = AnyCodable(notificationStatus.rawValue)
-        }
-        if let notes = input.notes {
-            body["notes"] = AnyCodable(notes)
-        }
-        return try await request(method: "PATCH", path: "/api/v1/admin/breach/\(pathSegment(id, name: "Breach ID"))", body: body)
     }
 
     // MARK: - Customer-Managed Encryption Keys
@@ -1775,11 +1739,25 @@ public final class Tuteliq: @unchecked Sendable {
         }
     }
 
+    /// Reads whose answer changes while a caller is watching it are never
+    /// cached: a verification being polled, an incident just reviewed, and
+    /// settings just changed (a liveness challenge carries a one-time nonce).
+    static func isCacheable(_ path: String) -> Bool {
+        !["/api/v1/verify/", "/api/v1/incidents", "/api/v1/settings/"].contains { path.hasPrefix($0) }
+    }
+
     private nonisolated func cachedData(for key: String) -> Data? {
         stateLock.lock()
         defer { stateLock.unlock() }
-        guard let entry = _cache[key], entry.expiry > Date() else { return nil }
-        return entry.data
+        let now = Date()
+        _cache = _cache.filter { $0.value.expiry > now }
+        return _cache[key]?.data
+    }
+
+    private nonisolated func clearCache() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        _cache.removeAll()
     }
 
     private nonisolated func setCachedData(_ data: Data, for key: String, ttl: TimeInterval) {
@@ -1862,8 +1840,11 @@ public final class Tuteliq: @unchecked Sendable {
         bodyData: Data?,
         query: [URLQueryItem]?
     ) async throws -> T {
-        // Check GET cache
-        let cacheKey = method == "GET" && cacheTTL > 0
+        // A write can change anything a cached read returned.
+        if method != "GET" {
+            clearCache()
+        }
+        let cacheKey = method == "GET" && cacheTTL > 0 && Self.isCacheable(path)
             ? "\(path)?\(query?.map { "\($0.name)=\($0.value ?? "")" }.joined(separator: "&") ?? "")"
             : nil
         if let cacheKey = cacheKey, let cached = cachedData(for: cacheKey) {
@@ -1931,6 +1912,10 @@ public final class Tuteliq: @unchecked Sendable {
         }
         if let query = query, !query.isEmpty {
             components.queryItems = query
+            // URLComponents leaves `+` as is, and servers read a literal `+` in
+            // a query as a space: "…T00:00:00+01:00" would arrive as "…00 01:00".
+            components.percentEncodedQuery = components.percentEncodedQuery?
+                .replacingOccurrences(of: "+", with: "%2B")
         }
         guard let url = components.url else {
             throw TuteliqError.unknownError("Failed to construct URL for: \(path)")
@@ -2105,9 +2090,12 @@ public final class Tuteliq: @unchecked Sendable {
         case "mp3": return "audio/mpeg"
         case "wav": return "audio/wav"
         case "m4a": return "audio/m4a"
+        case "aac": return "audio/aac"
         case "ogg": return "audio/ogg"
         case "flac": return "audio/flac"
         case "mp4": return "video/mp4"
+        case "m4v": return "video/x-m4v"
+        case "mpeg", "mpg": return "video/mpeg"
         case "webm": return "video/webm"
         case "mov": return "video/quicktime"
         case "avi": return "video/x-msvideo"
@@ -2122,7 +2110,13 @@ public final class Tuteliq: @unchecked Sendable {
 private extension Data {
     mutating func appendMultipart(boundary: String, name: String, filename: String, mimeType: String, data: Data) {
         append("--\(boundary)\r\n".data(using: .utf8)!)
-        append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        // Escaped as browsers do (HTML form encoding): a quote or line break in
+        // a caller's filename must not end the header or start a new one.
+        let safeFilename = filename
+            .replacingOccurrences(of: "\"", with: "%22")
+            .replacingOccurrences(of: "\r", with: "%0D")
+            .replacingOccurrences(of: "\n", with: "%0A")
+        append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(safeFilename)\"\r\n".data(using: .utf8)!)
         append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
         append(data)
         append("\r\n".data(using: .utf8)!)

@@ -960,7 +960,7 @@ final class TuteliqTests: XCTestCase {
         let client = try makeClient { _ in
             self.mockResponse(json: [
                 "apiKeyId": "key_1", "tier": "pro",
-                "limits": ["requestsPerMinute": 100, "requestsPerDay": -1],
+                "limits": ["requestsPerMinute": 100, "requestsPerMonth": 100_000, "requestsPerDay": -1],
                 "current": ["requestsThisMinute": 3, "requestsToday": 50],
                 "remaining": ["requestsThisMinute": 97, "requestsToday": -1],
                 "resetsInSeconds": 12,
@@ -968,6 +968,7 @@ final class TuteliqTests: XCTestCase {
         }
         let quota = try await client.getUsageQuota()
         XCTAssertEqual(quota.limits.requestsPerMinute, 100)
+        XCTAssertEqual(quota.limits.requestsPerMonth, 100_000)
         XCTAssertEqual(quota.remaining.requestsToday, -1)
         XCTAssertEqual(quota.resetsInSeconds, 12)
     }
@@ -976,11 +977,12 @@ final class TuteliqTests: XCTestCase {
         let json: [String: Any] = [
             "apiKeyId": "key_1", "tier": "pro", "date": "2026-10-15",
             "usage": ["totalRequests": 10, "successRequests": 9, "errorRequests": 1],
-            "quota": ["requestsPerMinute": 100, "requestsPerDay": 5000, "remainingToday": 4990],
+            "quota": ["requestsPerMinute": 100, "requestsPerMonth": 100_000, "requestsPerDay": -1, "remainingToday": -1],
         ]
         let result = try JSONDecoder().decode(UsageSummaryResult.self, from: jsonData(json))
         XCTAssertEqual(result.usage.errorRequests, 1)
-        XCTAssertEqual(result.quota.remainingToday, 4990)
+        XCTAssertEqual(result.quota.requestsPerMonth, 100_000)
+        XCTAssertEqual(result.quota.requestsPerDay, -1)
     }
 
     func testMediaResultsDecodeVerdictFields() throws {

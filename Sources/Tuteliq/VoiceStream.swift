@@ -173,7 +173,7 @@ public final class VoiceStreamSession: @unchecked Sendable {
     private let apiKey: String
     private let config: VoiceStreamConfig?
     private let handlers: VoiceStreamHandlers
-    private let baseURL: String
+    let baseURL: String
 
     private var webSocket: URLSessionWebSocketTask?
     private var session: URLSession?
@@ -202,12 +202,27 @@ public final class VoiceStreamSession: @unchecked Sendable {
         apiKey: String,
         config: VoiceStreamConfig? = nil,
         handlers: VoiceStreamHandlers = VoiceStreamHandlers(),
-        baseURL: String = "wss://api.tuteliq.ai/voice/stream"
+        baseURL: String = VoiceStreamSession.streamURL(apiBaseURL: URL(string: "https://api.tuteliq.ai")!)
     ) {
         self.apiKey = apiKey
         self.config = config
         self.handlers = handlers
         self.baseURL = baseURL
+    }
+
+    /// The stream endpoint for an API base URL: `https` becomes `wss` (and
+    /// `http` becomes `ws`), and the path is `/api/v1/safety/voice/stream`.
+    static func streamURL(apiBaseURL: URL) -> String {
+        var base = apiBaseURL.absoluteString
+        if base.hasPrefix("https://") {
+            base = "wss://" + base.dropFirst("https://".count)
+        } else if base.hasPrefix("http://") {
+            base = "ws://" + base.dropFirst("http://".count)
+        }
+        while base.hasSuffix("/") {
+            base.removeLast()
+        }
+        return base + "/api/v1/safety/voice/stream"
     }
 
     /// Open the WebSocket connection and wait for the ready event.

@@ -29,6 +29,11 @@ jobs:
       - name: Run tests
         run: swift test -v
 
+      # watchOS devices include 32-bit arm64_32, where Int is 32 bits: epoch
+      # milliseconds must stay Int64. A generic device build covers that slice.
+      - name: Build for watchOS
+        run: xcodebuild build -quiet -scheme Tuteliq -destination 'generic/platform=watchOS'
+
   lint:
     runs-on: macos-14
 

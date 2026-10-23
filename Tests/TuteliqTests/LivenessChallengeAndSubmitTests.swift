@@ -47,7 +47,7 @@ final class LivenessChallengeAndSubmitTests: XCTestCase {
 
     // MARK: - submitVerification
 
-    func test_submitVerification_assembles_multipart_with_passport() async throws {
+    func test_submitVerification_sends_id_front_with_passport_in_place_of_id_back() async throws {
         let helpers = TestHelpers()
         var capturedRequest: URLRequest?
 
@@ -75,6 +75,7 @@ final class LivenessChallengeAndSubmitTests: XCTestCase {
         }
 
         let input = SubmitVerificationInput(
+            idFront: Data("FRONT_BYTES".utf8),
             passport: Data("PASSPORT_BYTES".utf8),
             selfie: Data("SELFIE_BYTES".utf8),
             livenessToken: "{\"nonce\":\"abc\"}",
@@ -101,8 +102,9 @@ final class LivenessChallengeAndSubmitTests: XCTestCase {
         XCTAssertTrue(bodyText.contains("SELFIE_BYTES"))
         XCTAssertTrue(bodyText.contains("{\"nonce\":\"abc\"}"))
 
-        // ID parts must NOT be present when passport is supplied.
-        XCTAssertFalse(bodyText.contains("name=\"id_front\""))
+        // The API always requires id_front; the passport replaces only id_back.
+        XCTAssertTrue(bodyText.contains("name=\"id_front\""), "id_front part missing")
+        XCTAssertTrue(bodyText.contains("FRONT_BYTES"))
         XCTAssertFalse(bodyText.contains("name=\"id_back\""))
 
         // Result decoding.
@@ -145,15 +147,35 @@ final class LivenessChallengeAndSubmitTests: XCTestCase {
         XCTAssertFalse(bodyText.contains("name=\"passport\""))
     }
 
+    func test_submitVerification_without_a_back_is_rejected_before_sending() async throws {
+        let helpers = TestHelpers()
+        var sent = false
+        let client = try helpers.makeClient { _ in
+            sent = true
+            return helpers.mockResponse(json: [:])
+        }
+
+        let input = SubmitVerificationInput(idFront: Data("FRONT".utf8), selfie: Data("S".utf8), livenessToken: "{}")
+        do {
+            _ = try await client.submitVerification(input)
+            XCTFail("expected a validation error")
+        } catch TuteliqError.validationError {
+            // expected
+        }
+        XCTAssertFalse(sent, "no request may be sent without id_back or passport")
+    }
+
     func test_submitVerification_maps_400_to_validationError() async throws {
         let helpers = TestHelpers()
         let client = try helpers.makeClient { _ in
             helpers.mockResponse(statusCode: 400, json: [
-                "error": ["message": "id_front is required", "code": "FILE_MISSING"],
+                "error": ["message": "Could not read the document image", "code": "FILE_INVALID"],
             ])
         }
 
         let input = SubmitVerificationInput(
+            idFront: Data("FRONT".utf8),
+            idBack: Data("BACK".utf8),
             selfie: Data("S".utf8),
             livenessToken: "{}"
         )

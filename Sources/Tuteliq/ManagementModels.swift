@@ -149,6 +149,9 @@ public struct UsageSummaryResult: Codable, Sendable {
 
     public struct Quota: Codable, Sendable {
         public let requestsPerMinute: Int
+        /// The tier's monthly allowance: the limit that matters on a paid
+        /// tier, whose `requestsPerDay` is `-1`. `-1` means unlimited.
+        public let requestsPerMonth: Int
         /// `-1` means unlimited.
         public let requestsPerDay: Int
         /// `-1` means unlimited.
@@ -193,6 +196,9 @@ public struct UsageQuotaResult: Codable, Sendable {
 
     public struct Limits: Codable, Sendable {
         public let requestsPerMinute: Int
+        /// The tier's monthly allowance: the limit that matters on a paid
+        /// tier, whose `requestsPerDay` is `-1`. `-1` means unlimited.
+        public let requestsPerMonth: Int
         /// `-1` means unlimited.
         public let requestsPerDay: Int
     }
@@ -672,117 +678,4 @@ public struct AuditLogsResult: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case auditLogs = "audit_logs"
     }
-}
-
-// MARK: - Breach Management (GDPR Article 33/34)
-
-/// Breach severity levels.
-public enum BreachSeverity: String, Codable, Sendable {
-    case low
-    case medium
-    case high
-    case critical
-}
-
-/// Breach status values.
-public enum BreachStatus: String, Codable, Sendable {
-    case detected
-    case investigating
-    case contained
-    case reported
-    case resolved
-}
-
-/// Breach notification status values.
-public enum BreachNotificationStatus: String, Codable, Sendable {
-    case pending
-    case usersNotified = "users_notified"
-    case dpaNotified = "dpa_notified"
-    case completed
-}
-
-/// Input for logging a new data breach.
-public struct LogBreachInput: Sendable {
-    public var title: String
-    public var description: String
-    public var severity: BreachSeverity
-    public var affectedUserIds: [String]
-    public var dataCategories: [String]
-    public var reportedBy: String
-
-    public init(
-        title: String,
-        description: String,
-        severity: BreachSeverity,
-        affectedUserIds: [String],
-        dataCategories: [String],
-        reportedBy: String
-    ) {
-        self.title = title
-        self.description = description
-        self.severity = severity
-        self.affectedUserIds = affectedUserIds
-        self.dataCategories = dataCategories
-        self.reportedBy = reportedBy
-    }
-}
-
-/// Input for updating a breach.
-public struct UpdateBreachInput: Sendable {
-    public var status: BreachStatus
-    public var notificationStatus: BreachNotificationStatus?
-    public var notes: String?
-
-    public init(
-        status: BreachStatus,
-        notificationStatus: BreachNotificationStatus? = nil,
-        notes: String? = nil
-    ) {
-        self.status = status
-        self.notificationStatus = notificationStatus
-        self.notes = notes
-    }
-}
-
-/// A breach record.
-public struct BreachRecord: Codable, Sendable {
-    public let id: String
-    public let title: String
-    public let description: String
-    public let severity: String
-    public let status: String
-    public let notificationStatus: String
-    public let affectedUserIds: [String]
-    public let dataCategories: [String]
-    public let reportedBy: String
-    public let notificationDeadline: String
-    public let createdAt: String
-    public let updatedAt: String
-
-    private enum CodingKeys: String, CodingKey {
-        case id, title, description, severity, status
-        case notificationStatus = "notification_status"
-        case affectedUserIds = "affected_user_ids"
-        case dataCategories = "data_categories"
-        case reportedBy = "reported_by"
-        case notificationDeadline = "notification_deadline"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-}
-
-/// Result from logging a breach.
-public struct LogBreachResult: Codable, Sendable {
-    public let message: String
-    public let breach: BreachRecord
-}
-
-/// Result from listing breaches.
-public struct BreachListResult: Codable, Sendable {
-    public let breaches: [BreachRecord]
-}
-
-/// Result from getting/updating a breach.
-public struct BreachResult: Codable, Sendable {
-    public let breach: BreachRecord
 }

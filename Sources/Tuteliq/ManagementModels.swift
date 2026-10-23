@@ -443,11 +443,9 @@ public struct PricingPlan: Codable, Sendable {
     public let cta: String
     public let ctaLink: String
 
+    /// `/pricing` sends these in camelCase, unlike `/pricing/details`.
     enum CodingKeys: String, CodingKey {
-        case name, price, period, description, features
-        case isPopular = "is_popular"
-        case cta
-        case ctaLink = "cta_link"
+        case name, price, period, description, features, isPopular, cta, ctaLink
     }
 }
 
@@ -549,11 +547,21 @@ public struct ConsentRecord: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id
-        case userId = "user_id"
+        case userId
         case consentType = "consent_type"
         case status
         case version
         case createdAt = "created_at"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userId = try decodeUserId(from: decoder)
+        consentType = try container.decode(String.self, forKey: .consentType)
+        status = try container.decode(String.self, forKey: .status)
+        version = try container.decode(String.self, forKey: .version)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
     }
 }
 
@@ -617,11 +625,44 @@ public struct AuditLogEntry: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id
-        case userId = "user_id"
+        case userId
         case action
         case details
         case createdAt = "created_at"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userId = try decodeUserId(from: decoder)
+        action = try container.decode(String.self, forKey: .action)
+        details = try container.decodeIfPresent(AnyCodable.self, forKey: .details)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+}
+
+/// Consent and audit records carry the user as camelCase `userId` while every
+/// other key is snake_case. `user_id` is accepted too, should that ever be aligned.
+private func decodeUserId(from decoder: Decoder) throws -> String {
+    struct Key: CodingKey {
+        let stringValue: String
+        var intValue: Int? {
+            nil
+        }
+
+        init(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue _: Int) {
+            nil
+        }
+    }
+    let container = try decoder.container(keyedBy: Key.self)
+    if let userId = try container.decodeIfPresent(String.self, forKey: Key(stringValue: "userId")) {
+        return userId
+    }
+    return try container.decode(String.self, forKey: Key(stringValue: "user_id"))
 }
 
 /// Result from audit logs query.

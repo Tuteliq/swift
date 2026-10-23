@@ -93,6 +93,51 @@ final class ServerShapedResponseTests: XCTestCase {
         let result = try await client { body }.getConsentStatus()
         XCTAssertEqual(result.consents.first?.userId, "user_123")
     }
+
+    // MARK: - Retries
+
+    /// The request succeeded: sending it again would repeat a paid analysis.
+    func testAResponseThatDoesNotDecodeIsNotResent() async throws {
+        let client = try client { "{}" }
+        do {
+            _ = try await client.detectSocialEngineering(DetectionInput(content: "test message"))
+            XCTFail("Expected a decoding error")
+        } catch is DecodingError {}
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testAnUploadWhoseResponseDoesNotDecodeIsNotResent() async throws {
+        let client = try client { "{}" }
+        do {
+            _ = try await client.detectSyntheticImage(png)
+            XCTFail("Expected a decoding error")
+        } catch is DecodingError {}
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testAResponseThatDoesNotDecodeIsNotCached() async throws {
+        var body = "{}"
+        let client = try client(cacheTTL: 60) { body }
+        _ = try? await client.getPricing()
+        body = Fixture.pricing
+        let result = try await client.getPricing()
+        XCTAssertEqual(result.plans.count, 1)
+        XCTAssertEqual(calls, 2)
+    }
+
+    /// An exhausted message allowance or credit balance: retrying cannot help.
+    func testQuotaCodesThrowQuotaExceededWithoutRetrying() async throws {
+        for code in ["SUB_7004", "SUB_7005"] {
+            let client = try client(status: 429) { #"{"error":{"code":"\#(code)","message":"Message limit reached"}}"# }
+            do {
+                _ = try await client.detectSocialEngineering(DetectionInput(content: "test message"))
+                XCTFail("Expected quotaExceededError for \(code)")
+            } catch let TuteliqError.quotaExceededError(message) {
+                XCTAssertEqual(message, "Message limit reached", code)
+            }
+            XCTAssertEqual(calls, 1, code)
+        }
+    }
 }
 
 private enum Fixture {

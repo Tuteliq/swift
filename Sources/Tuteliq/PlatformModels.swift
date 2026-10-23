@@ -645,14 +645,16 @@ public struct BatchReviewIncidentsInput: Encodable, Sendable {
     public var reasonComment: String?
     public var newRiskLevel: String?
     public var newRiskCategory: String?
-    public var moderatorExternalId: String?
+    /// Stable per-moderator identifier. Required, as for a single review, so
+    /// the audit trail can attribute each decision.
+    public var moderatorExternalId: String
     public var retentionClass: RetentionClass?
 
     public init(
         incidentIds: [String],
         action: ModeratorAction,
         reasonCode: ModeratorReasonCode,
-        moderatorExternalId: String? = nil,
+        moderatorExternalId: String,
         reasonComment: String? = nil,
         newRiskLevel: String? = nil,
         newRiskCategory: String? = nil,
@@ -705,7 +707,7 @@ public enum IncidentSource: String, Codable, Sendable {
 
 /// Moderation status of an incident.
 public enum IncidentStatus: String, Codable, Sendable {
-    case new, reviewing, escalated, resolved, dismissed
+    case new, reviewed, escalated, resolved, dismissed
 }
 
 /// Filters for ``Tuteliq/listIncidents(_:)``.

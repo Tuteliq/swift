@@ -186,6 +186,10 @@ public enum WebhookEventType: String, Codable, Sendable {
     case groomingDetected = "grooming.detected"
     case selfHarmDetected = "self_harm.detected"
     case bullyingSevere = "bullying.severe"
+    case verificationCompleted = "verification.completed"
+    case minorDetected = "minor.detected"
+    case csamDetected = "csam.detected"
+    case csamCritical = "csam.critical"
 }
 
 /// Supported language codes for content analysis.
@@ -214,6 +218,9 @@ public enum Detection: String, Codable, Sendable {
     case coerciveControl = "coercive-control"
     case vulnerabilityExploitation = "vulnerability-exploitation"
     case radicalisation
+    case distressSignals = "distress-signals"
+    case tfgbv
+    case syntheticContent = "synthetic-content"
 }
 
 /// Detection endpoint identifiers for document analysis.

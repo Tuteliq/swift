@@ -69,25 +69,50 @@ https://github.com/Tuteliq/swift.git
 
 | 2.x | 3.0.0 |
 |---|---|
-| `RecommendedAction.flagForModerator` | `.flagForReview` (deprecated alias kept) |
+| `RecommendedAction.flagForModerator` | `.flagForReview` (deprecated alias kept, but see `switch` below) |
 | `DocumentType.idCard` | `.nationalId` (deprecated alias kept) |
 | `updatePolicy(_:)` | `setPolicy(_:)` (deprecated alias kept) |
 | `recommendedAction: String` on results | `RecommendedAction`. Compare with `<` or use `RecommendedAction.strongest(_:)` instead of matching strings. |
 
+**`.flagForModerator` in a `switch`.** The alias is a static property, not a case, so it doesn't count towards exhaustiveness: a 2.x `switch` with no `default` that lists `case .flagForModerator:` stops compiling ("switch must be exhaustive"). Rename it to `case .flagForReview:` there.
+
 Changes that need an edit:
 
-- **New enum cases.** `RecommendedAction.block`, `TuteliqError.quotaExceededError`, `VerificationSessionStatus.documentRequired` and new `Language` cases were added. An exhaustive `switch` over these enums needs the new cases or a `default`.
+- **New enum cases.** An exhaustive `switch` over these enums needs the new cases or a `default`:
+  - `RecommendedAction.block`
+  - `TuteliqError.quotaExceededError`
+  - `VerificationSessionStatus.documentRequired`
+  - `BatchItem.text`
+  - `Detection.distressSignals`, `.tfgbv` and `.syntheticContent`
+  - `WebhookEventType.verificationCompleted`, `.minorDetected`, `.csamDetected` and `.csamCritical`
+  - `Language`: 17 new languages
 - **`BatchItem.grooming`** gained `childAge`. Creating it is unchanged; a pattern that binds its values needs one more element: `case let .grooming(id, messages, context, childAge)`.
+- **Optional now, so unwrap where you read them** (the API can omit them):
+  - `rationale` on `BullyingResult`, `UnsafeResult` and `DetectionResult`.
+  - `DetectionResult.language` and `.languageStatus`: the fraud and extended-harm detectors leave them out when no supported language is resolved.
+  - `PolicyResult.config`, `PolicyResult.message` and `UsageQuotaResult.apiKeyId`.
+- **`includeEvidence` is `Bool?`** on `DetectionInput` and `AnalyseMultiInput` (was `Bool`, default `false`). `nil` lets the API decide (on, unless `verdictOnly`), and an explicit `false` now turns excerpts off. Code that reads the property needs to handle `nil`; passing `true` or `false` is unchanged.
 - **Fields with a new type**, matching what the API sends:
   - `VerificationSession.expiresAt` is `Int64`, epoch milliseconds (was `String`). `expiresAtDate` gives a `Date`.
   - `VerificationSessionResult.result` is `VerificationResult?` (was `AnyCodable?`), and `.createdAt` and `.expiresAt` are `Int64?` epoch milliseconds (were `String?`).
-  - `PolicyResult.config`, `PolicyResult.message` and `UsageQuotaResult.apiKeyId` are optional, because the API can omit them. Unwrap them where you read them.
-  - `DetectionResult.language` and `.languageStatus` are optional: the fraud and extended-harm detectors leave them out when no supported language is resolved.
   - `AnalyseMultiResult.results` is `[AnalyseMultiEndpointResult]` (was `[DetectionResult]`, which never decoded a real multi response). Its `confidence` and `riskScore` are optional, because not every detector reports them inside a multi result.
-- **Removed types.** `AgeVerificationResult`, `IdentityVerificationResult` and `VideoSafetyFinding` were not returned by any 2.x call. Use `VerificationRetrieveResult`, `IdentityRetrieveResult` and `VideoAnalysisResult.frameResults` instead.
-- **`LivenessChallenge.expiresAt`** is `Int64`, so it decodes on 32-bit watchOS.
-- **A monthly allowance or credit balance that runs out** (`SUB_7004`, `SUB_7005`) throws `TuteliqError.quotaExceededError` and is not retried. In 2.x it was a `rateLimitError`.
-- **A response that doesn't decode** throws its `DecodingError` straight away. 2.x sent the request again, repeating a paid analysis.
+  - `AnalyseMultiSummary.highestRisk` is `AnalyseMultiHighestRisk`, with `endpoint` and `riskScore` (was `[String: AnyCodable]`).
+  - `LivenessChallenge.expiresAt` is `Int64`, so it decodes on 32-bit watchOS.
+- **`VerificationRetrieveResult` and `IdentityRetrieveResult`** now match the retrieve response:
+  - `liveness: LivenessResult?` is `livenessValid: Bool`.
+  - `faceMatch: FaceMatchResult?` is `faceMatched: Bool?`.
+  - `createdAt` is `String` (was `String?`).
+  - `ageBracket`, `fullName`, `dateOfBirth`, `documentType` and `countryCode` are removed. The retrieve endpoint doesn't return them; read the details from the `submitVerification` or verification session result.
+- **Removed:**
+  - `AgeVerificationResult`, `IdentityVerificationResult` and `VideoSafetyFinding`, which no 2.x call returned. Use `VerificationRetrieveResult`, `IdentityRetrieveResult` and `VideoAnalysisResult.frameResults`.
+  - `CancelVerificationSessionResult.message` and `VideoAnalysisResult.safetyFindings`, which the API doesn't send.
+  - `logBreach`, `listBreaches`, `getBreach`, `updateBreachStatus` and their types. These are Tuteliq-internal admin endpoints: every call with a customer API key got a 403.
+- **Behaviour changes, with no compile error:**
+  - **A monthly allowance or credit balance that runs out** (`SUB_7004`, `SUB_7005`) throws `TuteliqError.quotaExceededError` and is not retried. In 2.x it was a `rateLimitError`, and was retried.
+  - **A response that doesn't decode** throws its `DecodingError` straight away. 2.x sent the request again, repeating a paid analysis.
+  - **`RecommendedAction(rawValue: "flag_for_moderator")` returns `nil`**, because the case's raw value is now `flag_for_review`. Use `RecommendedAction(apiValue:)`, which also maps the legacy spellings.
+  - **`analyze(include:)` throws `validationError`** for `.grooming`, `.emotions`, `.voice` and `.image`, and for an empty list. 2.x skipped them and reported "No safety concerns detected" without analysing anything. Call `detectGrooming`, `analyzeEmotions`, `analyzeVoice` or `analyzeImage` instead.
+  - **`voiceStream()` connects to `/api/v1/safety/voice/stream` on the client's `baseURL`.** 2.x always used a fixed host and an outdated path.
 
 ---
 
@@ -169,7 +194,7 @@ let result = try await tuteliq.detectBullying(
         metadata: ["channel": "general"]
     )
 )
-print(result.externalId)  // "msg_12345"
+print(result.externalId ?? "")  // "msg_12345"
 ```
 
 `incidentModerationEnabled` overrides your account's incident-logging setting for one call: `false` suppresses persistence (e.g. test traffic), `true` forces it, `nil` uses the account default.
@@ -721,7 +746,10 @@ let review = try await tuteliq.reviewIncident(
 
 // Same review across up to 100 incidents; failures are per-item
 let batch = try await tuteliq.batchReviewIncidents(
-    BatchReviewIncidentsInput(incidentIds: ["inc_1", "inc_2"], action: .resolve, reasonCode: .confirmedAccurate)
+    BatchReviewIncidentsInput(
+        incidentIds: ["inc_1", "inc_2"], action: .resolve, reasonCode: .confirmedAccurate,
+        moderatorExternalId: "mod_jane"
+    )
 )
 print("\(batch.succeeded)/\(batch.total)")
 ```
@@ -774,19 +802,6 @@ _ = try await tuteliq.getConsentStatus(type: .childSafetyMonitoring)
 _ = try await tuteliq.withdrawConsent(type: .marketing)        // Art 7.3
 _ = try await tuteliq.rectifyData(RectifyDataInput(collection: "incidents", documentId: "abc", fields: ["summary": AnyCodable("Corrected")]))
 _ = try await tuteliq.getAuditLogs(action: .dataExport, limit: 10)  // Art 15
-```
-
-### Breach Management (GDPR Art 33/34)
-
-```swift
-let logged = try await tuteliq.logBreach(
-    LogBreachInput(
-        title: "Unauthorized access", description: "…", severity: .high,
-        affectedUserIds: ["user-1"], dataCategories: ["email"], reportedBy: "security-team"
-    )
-)
-_ = try await tuteliq.listBreaches(status: .investigating)
-_ = try await tuteliq.updateBreachStatus(id: logged.breach.id, UpdateBreachInput(status: .contained, notificationStatus: .usersNotified))
 ```
 
 ### Pricing

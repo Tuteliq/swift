@@ -27,7 +27,7 @@ if result.recommendedAction.isActionable { /* flag_for_review or stronger */ }
 - Session API for your own capture UI: VerificationSessionCredentials (session link: https on verify.tuteliq.ai only; uploads go to https://api.tuteliq.ai unless apiBaseURL is passed), VerificationSessionClient (mode, progress, startLiveness, validate-document, validate-chip, validate-selfie, submit), LivenessTokenBuilder, SessionSubmission
 - capture_context (CaptureContext) is untrusted device metadata: SDK, OS version and device model, cameras and on-device engines, derived verdicts and pass rates. No images and no raw facial measurements are sent.
 - Native iOS verification (document capture, NFC chip reading, liveness, selfie) is a separate, licensed package: Tuteliq Verification
-- Platform: webhooks, policy and automation rules, detection settings, threat intelligence, incidents dashboard, moderator review, audit receipts, customer-managed encryption keys, GDPR and breach management
+- Platform: webhooks, policy and automation rules, detection settings, threat intelligence, incidents dashboard, moderator review, audit receipts, customer-managed encryption keys, GDPR data rights
 - Crisis helplines localised via `context.country` and `supportThreshold`
 - Keychain-backed API key storage
 

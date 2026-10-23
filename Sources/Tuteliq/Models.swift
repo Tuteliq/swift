@@ -406,6 +406,18 @@ public struct GroomingResult: Codable, Sendable {
     public let recommendedAction: RecommendedAction
     /// Human-readable expansion of `recommendedAction`. Do not branch on it. Omitted in fast mode.
     public let actionDetail: String?
+    /// Whether the conversation was actually analysed. Check it before
+    /// trusting a `.none` ``groomingRisk``:
+    /// - `"ok"` (or absent): analysed as usual.
+    /// - `"engine_error"`: no verdict could be produced. ``groomingRisk`` is
+    ///   `.none` and ``riskScore`` is 0, but the conversation is NOT safe:
+    ///   ``recommendedAction`` is `.flagForReview`, so route it to a moderator.
+    /// - `"out_of_scope_adults"`: every known participant is an adult, so
+    ///   grooming detection doesn't apply. See ``actionDetail`` for detectors
+    ///   that cover adult-to-adult manipulation.
+    ///
+    /// A string, not an enum, so a status added later still decodes.
+    public let analysisStatus: String?
     /// Omitted in fast mode (`verdictOnly`).
     public let messageAnalysis: [MessageAnalysis]?
     public let language: String?
@@ -430,6 +442,7 @@ public struct GroomingResult: Codable, Sendable {
         case riskScore = "risk_score"
         case recommendedAction = "recommended_action"
         case actionDetail = "action_detail"
+        case analysisStatus = "analysis_status"
         case messageAnalysis = "message_analysis"
         case language
         case languageStatus = "language_status"
@@ -1343,8 +1356,10 @@ public struct AnalyseMultiInput: Sendable {
     public var detections: [Detection]
     /// Optional analysis context.
     public var context: AnalysisContext?
-    /// Include evidence in individual results.
-    public var includeEvidence: Bool
+    /// Include evidence excerpts (quoted spans of the input) in each result.
+    /// `nil` lets the API decide: `true` normally, `false` when `verdictOnly`
+    /// is set. An explicit value always wins, so `false` turns excerpts off.
+    public var includeEvidence: Bool?
     /// Your external correlation ID.
     public var externalId: String?
     /// Multi-tenant customer ID.
@@ -1362,7 +1377,7 @@ public struct AnalyseMultiInput: Sendable {
         content: String,
         detections: [Detection],
         context: AnalysisContext? = nil,
-        includeEvidence: Bool = false,
+        includeEvidence: Bool? = nil,
         externalId: String? = nil,
         customerId: String? = nil,
         metadata: [String: Any]? = nil,
@@ -1876,16 +1891,19 @@ public struct LivenessChallenge: Codable, Sendable, Equatable {
 
 /// Input to ``Tuteliq/submitVerification(_:)``.
 ///
-/// Provide either `passport` (preferred when available) **or** `idFront` +
-/// `idBack` for two-sided ID cards / driving licences. `selfie` and
+/// `idFront` is always required: for a passport, it is the bio page. The
+/// back of the document is either `idBack` (two-sided ID cards and driving
+/// licences) or `passport`, which stands in for it. `selfie` and
 /// `livenessToken` are always required.
 public struct SubmitVerificationInput: Sendable {
-    /// JPEG bytes of the passport bio page. Mutually exclusive with `idFront`/`idBack`.
-    public var passport: Data?
-    /// JPEG bytes of the front of an ID card or driving licence.
-    public var idFront: Data?
-    /// JPEG bytes of the back of an ID card or driving licence.
+    /// JPEG bytes of the front of the document. For a passport, the bio page.
+    public var idFront: Data
+    /// JPEG bytes of the back of an ID card or driving licence. Required
+    /// unless `passport` is provided.
     public var idBack: Data?
+    /// JPEG bytes of a passport page, sent in place of `idBack`. It does not
+    /// replace `idFront`.
+    public var passport: Data?
     /// JPEG bytes of the selfie capture.
     public var selfie: Data
     /// Stringified `LivenessToken` payload built from the server's
@@ -1898,16 +1916,16 @@ public struct SubmitVerificationInput: Sendable {
     public var livenessFrames: [Data]?
 
     public init(
-        passport: Data? = nil,
-        idFront: Data? = nil,
+        idFront: Data,
         idBack: Data? = nil,
+        passport: Data? = nil,
         selfie: Data,
         livenessToken: String,
         livenessFrames: [Data]? = nil
     ) {
-        self.passport = passport
         self.idFront = idFront
         self.idBack = idBack
+        self.passport = passport
         self.selfie = selfie
         self.livenessToken = livenessToken
         self.livenessFrames = livenessFrames

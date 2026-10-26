@@ -1,28 +1,35 @@
 # Tuteliq Swift SDK
 
-> Official Swift SDK for Tuteliq — AI-powered child safety API for iOS, macOS, tvOS, and watchOS.
+> Official Swift SDK for Tuteliq — AI-powered child safety API for iOS, macOS, tvOS, watchOS, and visionOS.
 
 ## What is this?
-A Swift package for the Tuteliq child safety API. Detect bullying, grooming, self-harm, substance promotion, and other harmful content. Works with iOS 15+, macOS 12+, tvOS 15+, and watchOS 8+.
+A Swift package for the Tuteliq child safety API. Detect bullying, grooming, self-harm, fraud, radicalisation, and other harms in text, conversations, voice, images, video, and PDF documents; detect AI-generated content; and run hosted age and identity verification. Works with iOS 15+, macOS 12+, tvOS 15+, watchOS 8+, and visionOS 1+.
 
 ## Install
 // Package.swift
-.package(url: "https://github.com/tuteliq/tuteliq-swift.git", from: "1.0.0")
+.package(url: "https://github.com/Tuteliq/swift.git", from: "3.0.0")
 
 ## Quick Start
 import Tuteliq
-let client = Tuteliq(apiKey: ProcessInfo.processInfo.environment["TUTELIQ_API_KEY"]!)
-let result = try await client.detectUnsafe(text: "content to check", ageGroup: "13-15")
+let client = try Tuteliq(apiKey: apiKey)
+let result = try await client.detectUnsafe(content: "content to check", context: AnalysisContext(ageGroup: "13-15"))
+if result.recommendedAction.isActionable { /* flag_for_review or stronger */ }
 
 ## Key Features
-- Swift concurrency (async/await)
-- All Apple platforms (iOS, macOS, tvOS, watchOS)
-- All 20+ Tuteliq API endpoints
-- 16+ detection categories (KOSA compliant)
-- Age group calibration
-- Age verification (Beta) — POST /v1/verification/age — 5 credits, Pro tier+
-- Identity verification (Beta) — POST /v1/verification/identity — 10 credits, Business tier+
-- Swift Package Manager
+- Swift concurrency (async/await), Codable models, no dependencies
+- Branch on `recommendedAction` (none, monitor, flagForReview, block, immediateIntervention)
+- Multi-turn risk: continuation tokens, `trajectoryRisk`, `context.priorMessages`
+- Safety: detectBullying, detectGrooming, detectUnsafe, analyze, analyzeEmotions
+- Fraud and extended harms: social engineering, app fraud, romance scams, mule recruitment, gambling harm, coercive control, vulnerability exploitation, radicalisation, distress signals, TFGBV, analyseMulti
+- Media: analyzeVoice, analyzeImage, analyzeVideo, analyzeDocument (PDF), real-time voiceStream
+- Synthetic content: detectSyntheticText/Image/Audio/Video
+- Verification: createVerificationSession / getVerificationSession (age and identity verification; Pro+ / Business+)
+- Session API for your own capture UI: VerificationSessionCredentials (session link: https on verify.tuteliq.ai only; uploads go to https://api.tuteliq.ai unless apiBaseURL is passed), VerificationSessionClient (mode, progress, startLiveness, validate-document, validate-chip, validate-selfie, submit), LivenessTokenBuilder, SessionSubmission
+- capture_context (CaptureContext) is untrusted device metadata: SDK, OS version and device model, cameras and on-device engines, derived verdicts and pass rates. No images and no raw facial measurements are sent.
+- Native iOS verification (document capture, NFC chip reading, liveness, selfie) is a separate, licensed package: Tuteliq Verification
+- Platform: webhooks, policy and automation rules, detection settings, threat intelligence, incidents dashboard, moderator review, audit receipts, customer-managed encryption keys, GDPR data rights
+- Crisis helplines localised via `context.country` and `supportThreshold`
+- Keychain-backed API key storage
 
 ## Supported Languages
 27 languages: English (stable), Spanish, Portuguese, Ukrainian, Swedish, Norwegian, Danish, Finnish, German, French, Dutch, Polish, Italian, Turkish, Romanian, Greek, Czech, Hungarian, Bulgarian, Croatian, Slovak, Lithuanian, Latvian, Estonian, Slovenian, Maltese, Irish (beta). Auto-detected, no configuration needed.

@@ -3,29 +3,56 @@ import Foundation
 // MARK: - Policy
 
 /// Result from policy endpoints (`GET /api/v1/policy`, `PUT /api/v1/policy`).
+///
+/// `config` uses the API's camelCase keys (`bullying.minRiskScoreToFlag`, `selfHarm`, …).
 public struct PolicyResult: Codable, Sendable {
     public let success: Bool
-    public let config: [String: AnyCodable]
-    public let message: String
+    public let config: [String: AnyCodable]?
+    public let message: String?
 }
 
 // MARK: - Batch Analysis
 
+/// Text-based analysis types accepted by batch analysis.
+public enum BatchTextType: String, Codable, Sendable {
+    case bullying
+    case unsafe
+    case socialEngineering = "social_engineering"
+    case appFraud = "app_fraud"
+    case romanceScam = "romance_scam"
+    case muleRecruitment = "mule_recruitment"
+    case gamblingHarm = "gambling_harm"
+    case coerciveControl = "coercive_control"
+    case vulnerabilityExploitation = "vulnerability_exploitation"
+    case radicalisation
+}
+
 /// A single item in a batch analysis request.
 ///
-/// Each case corresponds to an analysis type with its required input data.
+/// `id` addresses the item within this request and is echoed on its result.
+/// It is not `externalId`, which is your own record's identifier.
 /// ```swift
 /// let items: [BatchItem] = [
 ///     .bullying(id: "msg-1", text: "You're not welcome"),
-///     .unsafe(id: "msg-2", text: "Some other text"),
-///     .grooming(id: "conv-1", messages: groomingMessages),
+///     .text(id: "msg-2", type: .romanceScam, text: "Send me the gift card codes"),
+///     .grooming(id: "conv-1", messages: groomingMessages, childAge: 12),
 /// ]
 /// ```
 public enum BatchItem: Sendable {
     case bullying(id: String, text: String, context: AnalysisContext? = nil)
-    case grooming(id: String, messages: [GroomingMessage], context: AnalysisContext? = nil)
+    case grooming(id: String, messages: [GroomingMessage], context: AnalysisContext? = nil, childAge: Int? = nil)
     case unsafe (id: String, text: String, context: AnalysisContext? = nil)
     case emotions(id: String, messages: [EmotionMessage], context: AnalysisContext? = nil)
+    /// Any text-based type, including the fraud and safety-extended detectors.
+    case text(id: String, type: BatchTextType, text: String, context: AnalysisContext? = nil)
+
+    var id: String {
+        switch self {
+        case let .bullying(id, _, _), let .grooming(id, _, _, _), let .unsafe (id, _, _),
+             let .emotions(id, _, _), let .text(id, _, _, _):
+            return id
+        }
+    }
 }
 
 /// Input for batch analysis.
@@ -61,6 +88,13 @@ public struct BatchResultItem: Codable, Sendable {
     public let result: AnyCodable?
     /// Error message if analysis failed.
     public let error: String?
+    /// Credits consumed by this item.
+    public let creditsUsed: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, type, success, result, error
+        case creditsUsed = "credits_used"
+    }
 
     /// Decode the result as a specific type.
     ///
@@ -86,16 +120,20 @@ public struct BatchSummary: Codable, Sendable {
     public let successful: Int
     public let failed: Int
     public let processingTimeMs: Int
+    /// Total credits consumed across all items.
+    public let totalCreditsUsed: Int?
 
+    /// The API sends `processingTimeMs` in camelCase alongside snake_case `total_credits_used`.
     enum CodingKeys: String, CodingKey {
         case total, successful, failed
-        case processingTimeMs = "processing_time_ms"
+        case processingTimeMs
+        case totalCreditsUsed = "total_credits_used"
     }
 }
 
 // MARK: - Usage
 
-/// Result from `GET /api/v1/usage/summary`.
+/// Result from `GET /api/v1/usage/summary`. The API sends this shape in camelCase.
 public struct UsageSummaryResult: Codable, Sendable {
     public let apiKeyId: String
     public let tier: String
@@ -103,35 +141,21 @@ public struct UsageSummaryResult: Codable, Sendable {
     public let usage: Stats
     public let quota: Quota
 
-    enum CodingKeys: String, CodingKey {
-        case apiKeyId = "api_key_id"
-        case tier, date, usage, quota
-    }
-
     public struct Stats: Codable, Sendable {
         public let totalRequests: Int
         public let successRequests: Int
         public let errorRequests: Int
-
-        enum CodingKeys: String, CodingKey {
-            case totalRequests = "total_requests"
-            case successRequests = "success_requests"
-            case errorRequests = "error_requests"
-        }
     }
 
     public struct Quota: Codable, Sendable {
         public let requestsPerMinute: Int
+        /// The tier's monthly allowance: the limit that matters on a paid
+        /// tier, whose `requestsPerDay` is `-1`. `-1` means unlimited.
         public let requestsPerMonth: Int
+        /// `-1` means unlimited.
         public let requestsPerDay: Int
+        /// `-1` means unlimited.
         public let remainingToday: Int
-
-        enum CodingKeys: String, CodingKey {
-            case requestsPerMinute = "requests_per_minute"
-            case requestsPerMonth = "requests_per_month"
-            case requestsPerDay = "requests_per_day"
-            case remainingToday = "remaining_today"
-        }
     }
 }
 
@@ -160,49 +184,34 @@ public struct UsageHistoryResult: Codable, Sendable {
     }
 }
 
-/// Result from `GET /api/v1/usage/quota`.
+/// Result from `GET /api/v1/usage/quota`. The API sends this shape in camelCase.
 public struct UsageQuotaResult: Codable, Sendable {
-    public let apiKeyId: String
+    public let apiKeyId: String?
     public let tier: String
     public let limits: Limits
     public let current: Current
     public let remaining: Remaining
-
-    enum CodingKeys: String, CodingKey {
-        case apiKeyId = "api_key_id"
-        case tier, limits, current, remaining
-    }
+    /// Seconds until the per-minute window resets. `nil` on API deployments before 2026-09-21.
+    public let resetsInSeconds: Int?
 
     public struct Limits: Codable, Sendable {
         public let requestsPerMinute: Int
+        /// The tier's monthly allowance: the limit that matters on a paid
+        /// tier, whose `requestsPerDay` is `-1`. `-1` means unlimited.
         public let requestsPerMonth: Int
+        /// `-1` means unlimited.
         public let requestsPerDay: Int
-
-        enum CodingKeys: String, CodingKey {
-            case requestsPerMinute = "requests_per_minute"
-            case requestsPerMonth = "requests_per_month"
-            case requestsPerDay = "requests_per_day"
-        }
     }
 
     public struct Current: Codable, Sendable {
         public let requestsThisMinute: Int
         public let requestsToday: Int
-
-        enum CodingKeys: String, CodingKey {
-            case requestsThisMinute = "requests_this_minute"
-            case requestsToday = "requests_today"
-        }
     }
 
     public struct Remaining: Codable, Sendable {
         public let requestsThisMinute: Int
+        /// `-1` means unlimited.
         public let requestsToday: Int
-
-        enum CodingKeys: String, CodingKey {
-            case requestsThisMinute = "requests_this_minute"
-            case requestsToday = "requests_today"
-        }
     }
 }
 
@@ -440,11 +449,9 @@ public struct PricingPlan: Codable, Sendable {
     public let cta: String
     public let ctaLink: String
 
+    /// `/pricing` sends these in camelCase, unlike `/pricing/details`.
     enum CodingKeys: String, CodingKey {
-        case name, price, period, description, features
-        case isPopular = "is_popular"
-        case cta
-        case ctaLink = "cta_link"
+        case name, price, period, description, features, isPopular, cta, ctaLink
     }
 }
 
@@ -546,11 +553,21 @@ public struct ConsentRecord: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id
-        case userId = "user_id"
+        case userId
         case consentType = "consent_type"
         case status
         case version
         case createdAt = "created_at"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userId = try decodeUserId(from: decoder)
+        consentType = try container.decode(String.self, forKey: .consentType)
+        status = try container.decode(String.self, forKey: .status)
+        version = try container.decode(String.self, forKey: .version)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
     }
 }
 
@@ -614,11 +631,44 @@ public struct AuditLogEntry: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id
-        case userId = "user_id"
+        case userId
         case action
         case details
         case createdAt = "created_at"
     }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        userId = try decodeUserId(from: decoder)
+        action = try container.decode(String.self, forKey: .action)
+        details = try container.decodeIfPresent(AnyCodable.self, forKey: .details)
+        createdAt = try container.decode(String.self, forKey: .createdAt)
+    }
+}
+
+/// Consent and audit records carry the user as camelCase `userId` while every
+/// other key is snake_case. `user_id` is accepted too, should that ever be aligned.
+private func decodeUserId(from decoder: Decoder) throws -> String {
+    struct Key: CodingKey {
+        let stringValue: String
+        var intValue: Int? {
+            nil
+        }
+
+        init(stringValue: String) {
+            self.stringValue = stringValue
+        }
+
+        init?(intValue _: Int) {
+            nil
+        }
+    }
+    let container = try decoder.container(keyedBy: Key.self)
+    if let userId = try container.decodeIfPresent(String.self, forKey: Key(stringValue: "userId")) {
+        return userId
+    }
+    return try container.decode(String.self, forKey: Key(stringValue: "user_id"))
 }
 
 /// Result from audit logs query.
@@ -628,117 +678,4 @@ public struct AuditLogsResult: Codable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case auditLogs = "audit_logs"
     }
-}
-
-// MARK: - Breach Management (GDPR Article 33/34)
-
-/// Breach severity levels.
-public enum BreachSeverity: String, Codable, Sendable {
-    case low
-    case medium
-    case high
-    case critical
-}
-
-/// Breach status values.
-public enum BreachStatus: String, Codable, Sendable {
-    case detected
-    case investigating
-    case contained
-    case reported
-    case resolved
-}
-
-/// Breach notification status values.
-public enum BreachNotificationStatus: String, Codable, Sendable {
-    case pending
-    case usersNotified = "users_notified"
-    case dpaNotified = "dpa_notified"
-    case completed
-}
-
-/// Input for logging a new data breach.
-public struct LogBreachInput: Sendable {
-    public var title: String
-    public var description: String
-    public var severity: BreachSeverity
-    public var affectedUserIds: [String]
-    public var dataCategories: [String]
-    public var reportedBy: String
-
-    public init(
-        title: String,
-        description: String,
-        severity: BreachSeverity,
-        affectedUserIds: [String],
-        dataCategories: [String],
-        reportedBy: String
-    ) {
-        self.title = title
-        self.description = description
-        self.severity = severity
-        self.affectedUserIds = affectedUserIds
-        self.dataCategories = dataCategories
-        self.reportedBy = reportedBy
-    }
-}
-
-/// Input for updating a breach.
-public struct UpdateBreachInput: Sendable {
-    public var status: BreachStatus
-    public var notificationStatus: BreachNotificationStatus?
-    public var notes: String?
-
-    public init(
-        status: BreachStatus,
-        notificationStatus: BreachNotificationStatus? = nil,
-        notes: String? = nil
-    ) {
-        self.status = status
-        self.notificationStatus = notificationStatus
-        self.notes = notes
-    }
-}
-
-/// A breach record.
-public struct BreachRecord: Codable, Sendable {
-    public let id: String
-    public let title: String
-    public let description: String
-    public let severity: String
-    public let status: String
-    public let notificationStatus: String
-    public let affectedUserIds: [String]
-    public let dataCategories: [String]
-    public let reportedBy: String
-    public let notificationDeadline: String
-    public let createdAt: String
-    public let updatedAt: String
-
-    private enum CodingKeys: String, CodingKey {
-        case id, title, description, severity, status
-        case notificationStatus = "notification_status"
-        case affectedUserIds = "affected_user_ids"
-        case dataCategories = "data_categories"
-        case reportedBy = "reported_by"
-        case notificationDeadline = "notification_deadline"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-}
-
-/// Result from logging a breach.
-public struct LogBreachResult: Codable, Sendable {
-    public let message: String
-    public let breach: BreachRecord
-}
-
-/// Result from listing breaches.
-public struct BreachListResult: Codable, Sendable {
-    public let breaches: [BreachRecord]
-}
-
-/// Result from getting/updating a breach.
-public struct BreachResult: Codable, Sendable {
-    public let breach: BreachRecord
 }

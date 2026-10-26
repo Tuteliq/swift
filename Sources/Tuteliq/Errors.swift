@@ -22,8 +22,12 @@ public enum TuteliqError: Error, LocalizedError, Sendable {
     /// API key is missing or invalid (HTTP 401).
     case authenticationError(String)
 
-    /// Rate limit exceeded (HTTP 429).
+    /// Per-minute rate limit exceeded (HTTP 429). Retried automatically with backoff.
     case rateLimitError(String)
+
+    /// Monthly quota exhausted (HTTP 429 with `RATE_2003` / `QUOTA_EXCEEDED`).
+    /// Not retried: it will not clear until the quota resets or credits are added.
+    case quotaExceededError(String)
 
     /// Invalid request parameters (HTTP 400).
     case validationError(String, details: AnyCodable? = nil)
@@ -53,6 +57,7 @@ public enum TuteliqError: Error, LocalizedError, Sendable {
         switch self {
         case let .authenticationError(msg): return "Authentication Error: \(msg)"
         case let .rateLimitError(msg): return "Rate Limit Error: \(msg)"
+        case let .quotaExceededError(msg): return "Quota Exceeded: \(msg)"
         case let .validationError(msg, _): return "Validation Error: \(msg)"
         case let .notFoundError(msg): return "Not Found: \(msg)"
         case let .subscriptionError(msg, _): return "Subscription Error: \(msg)"

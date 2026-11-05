@@ -106,7 +106,7 @@ Changes that need an edit:
 - **Removed:**
   - `AgeVerificationResult`, `IdentityVerificationResult` and `VideoSafetyFinding`, which no 2.x call returned. Use `VerificationRetrieveResult`, `IdentityRetrieveResult` and `VideoAnalysisResult.frameResults`.
   - `CancelVerificationSessionResult.message` and `VideoAnalysisResult.safetyFindings`, which the API doesn't send.
-  - `logBreach`, `listBreaches`, `getBreach`, `updateBreachStatus` and their types. These are Tuteliq-internal admin endpoints: every call with a customer API key got a 403.
+  - `logBreach`, `listBreaches`, `getBreach`, `updateBreachStatus` and their types. They are not available to customer API keys, so every call failed.
 - **Behaviour changes, with no compile error:**
   - **A monthly allowance or credit balance that runs out** (`SUB_7004`, `SUB_7005`) throws `TuteliqError.quotaExceededError` and is not retried. In 2.x it was a `rateLimitError`, and was retried.
   - **A response that doesn't decode** throws its `DecodingError` straight away. 2.x sent the request again, repeating a paid analysis.
@@ -616,7 +616,7 @@ Session links:
 
 Rules the server enforces:
 
-- **Challenge order and timing:** complete the prompts in the order received, at least 0.55 s apart. Wait until `earliestNextCompletion` before showing the next prompt rather than recording a completion later than it happened, and never record one in the future (`complete` refuses it). Use the token within about 5 minutes (`encoded()` refuses an expired one); each nonce works once.
+- **Challenge order and timing:** complete the prompts in the order received. Wait until `earliestNextCompletion` before showing the next prompt rather than recording a completion later than it happened, and never record one in the future (`complete` refuses it). Use the token promptly (`encoded()` refuses an expired one); each nonce works once.
 - **Frames:** send 2–12 upright, unmirrored JPEG frames from the liveness run. The server re-analyses them and decides; the token alone proves nothing.
 - **Errors:** session problems throw `VerificationError` (`.sessionExpired`, `.rateLimited(retryAfter:)`, `.server(code:message:statusCode:)`…). On `SVC_4002`, retry the submit once after a short pause. On `ANALYSIS_6005`, recapture the document. On `.documentRequired`, add a document and submit again.
 
@@ -632,7 +632,7 @@ Rules the server enforces:
 | `document` | Camera or file, whether it was auto-captured, on-device document check verdict, tilt range and frame count, check scores and reasons | What document evidence to expect |
 | `chip` | Access protocol and key type, whether the key came from the photo, chip and active authentication outcomes, data groups read | What chip evidence to expect |
 
-It sends no image and no raw facial measurement. `LivenessDepthEvidence`'s millimetre and distance values are measurements of a face, possibly a child's: they stay on the device and are never encoded. Leave out `capture_context` entirely if you prefer; nothing depends on it.
+It sends no image and no facial measurement. Leave out `capture_context` entirely if you prefer; nothing depends on it.
 
 ### Native Verification (licensed add-on)
 

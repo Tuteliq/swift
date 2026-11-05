@@ -2,20 +2,16 @@ import Foundation
 
 /// Builds the `liveness_token` the server validates against its signed challenge.
 ///
-/// The server checks: `id` is a UUID v4; exactly the challenges it issued, in
-/// its order; `completedAt` strictly increasing and at least 500 ms after
-/// `createdAt` and after each other; every timestamp within `[createdAt, now]`
-/// on its clock; the whole thing used within 5 minutes; `createdAt` no earlier
-/// than the challenge's issue time.
-///
-/// The builder enforces the order, the interval, no timestamp in the future and
-/// the age. Timestamps are sent on the server's clock when ``clockOffset`` is
+/// The server checks that the token answers the challenge it issued, in its
+/// order and timing. The builder keeps a token within those rules: it records
+/// completions in order, paced, never in the future, and refuses an expired
+/// token. Timestamps are sent on the server's clock when ``clockOffset`` is
 /// known, which ``VerificationSessionClient/startLiveness()`` sets; creating the
 /// builder after the challenge was fetched keeps `createdAt` after its issue time.
 public struct LivenessTokenBuilder: Sendable, Equatable {
-    /// Gap enforced between steps. The server requires 500 ms; the margin absorbs clock rounding.
+    /// Gap enforced between steps.
     public static let minimumStepInterval: TimeInterval = 0.55
-    /// The server accepts tokens up to 300 s old; stop well before.
+    /// Age after which the token is no longer sent.
     public static let maximumAge: TimeInterval = 280
 
     public let challenge: LivenessChallenge

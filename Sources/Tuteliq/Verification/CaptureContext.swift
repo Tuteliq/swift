@@ -11,8 +11,7 @@ import Foundation
 /// What it sends: the SDK's name and version, the platform, OS version and
 /// hardware model (for diagnosing capture problems on specific devices), which
 /// camera and on-device engines ran, and their derived results (verdicts, pass
-/// rates, counts). It sends no image and no raw facial measurement: the
-/// millimetre and distance values in ``LivenessDepthEvidence`` stay on the device.
+/// rates, counts). It sends no image and no facial measurement.
 ///
 /// A capture UI built on ``VerificationSessionAPI`` fills in what it knows. The
 /// licensed Tuteliq Verification package fills in all of it.
@@ -139,22 +138,11 @@ public struct LivenessDepthEvidence: Codable, Sendable, Equatable {
     /// Share of usable frames that passed each part of the check, 0-1.
     public var reliefPassRate: Double
     public var sizePassRate: Double
-    /// Medians over the usable frames. These are measurements of a face, possibly
-    /// a child's: they stay on the device (e.g. for a debug overlay) and are never
-    /// encoded or sent.
-    public var noseReliefMM: Double?
-    public var interpupillaryMM: Double?
-    public var distanceCM: Double?
     /// Share of the face covered by usable depth, 0-1.
     public var coverage: Double?
 
-    /// What is sent: the derived result only.
-    enum CodingKeys: String, CodingKey {
-        case sensor, verdict, framesAnalyzed, framesWithDepth, reliefPassRate, sizePassRate, coverage
-    }
-
     public init(sensor: String, verdict: Verdict, framesAnalyzed: Int, framesWithDepth: Int, reliefPassRate: Double, sizePassRate: Double,
-                noseReliefMM: Double?, interpupillaryMM: Double?, distanceCM: Double?, coverage: Double?)
+                coverage: Double?)
     {
         self.sensor = sensor
         self.verdict = verdict
@@ -162,9 +150,6 @@ public struct LivenessDepthEvidence: Codable, Sendable, Equatable {
         self.framesWithDepth = framesWithDepth
         self.reliefPassRate = reliefPassRate
         self.sizePassRate = sizePassRate
-        self.noseReliefMM = noseReliefMM
-        self.interpupillaryMM = interpupillaryMM
-        self.distanceCM = distanceCM
         self.coverage = coverage
     }
 }

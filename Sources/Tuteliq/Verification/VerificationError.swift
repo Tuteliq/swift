@@ -24,6 +24,8 @@ public enum VerificationError: Error, LocalizedError, Sendable, Equatable {
     case invalidResponse(String)
     case cameraUnavailable
     case cameraPermissionDenied
+    /// The flow requires the document's chip, and this device can't read it (no NFC).
+    case chipReadingUnavailable
     /// Liveness could not be completed (challenges timed out twice, or the token expired).
     case livenessFailed(String)
     /// The user cancelled the flow.
@@ -46,6 +48,7 @@ public enum VerificationError: Error, LocalizedError, Sendable, Equatable {
         case .timeout: return "The request timed out."
         case let .invalidResponse(detail): return "Unexpected response: \(detail)"
         case .cameraUnavailable: return "The camera is not available."
+        case .chipReadingUnavailable: return "This device can't read the document's chip."
         case .cameraPermissionDenied: return "Camera access is needed to verify your identity. Enable it in Settings."
         case let .livenessFailed(reason): return reason
         case .cancelled: return "Verification was cancelled."

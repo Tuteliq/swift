@@ -336,4 +336,10 @@ final class SessionClientCoverageTests: XCTestCase {
         let sent = try XCTUnwrap(face["depth"] as? [String: Any])
         XCTAssertEqual(Set(sent.keys), ["sensor", "verdict", "frames_analyzed", "frames_with_depth", "relief_pass_rate", "size_pass_rate", "coverage"])
     }
+
+    func testChipReadingUnavailableIsItsOwnError() {
+        let error = VerificationError.chipReadingUnavailable
+        XCTAssertEqual(error.localizedDescription, "This device can't read the document's chip.")
+        XCTAssertNil(error.code, "not an API error")
+    }
 }

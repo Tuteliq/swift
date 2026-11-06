@@ -205,6 +205,72 @@ final class SessionClientTests: XCTestCase {
         XCTAssertNil(result)
     }
 
+    func testFetchChipChallengeDecodesTheChallengeBytes() async throws {
+        var captured: URLRequest?
+        SessionMockURLProtocol.handler = { request, _ in
+            captured = request
+            return (200, Data(#"{"challenge":"0a1b2c3d4e5f6071","expires_at":1760000120000}"#.utf8))
+        }
+        let challenge = try await client().fetchChipChallenge()
+        XCTAssertEqual(challenge.challenge, Data([0x0A, 0x1B, 0x2C, 0x3D, 0x4E, 0x5F, 0x60, 0x71]))
+        XCTAssertEqual(challenge.expiresAt, Date(timeIntervalSince1970: 1_760_000_120))
+        XCTAssertEqual(captured?.url?.absoluteString, "https://api.tuteliq.ai/api/v1/verify/session/s1/chip-challenge")
+        XCTAssertEqual(captured?.httpMethod, "GET")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Authorization"), "Bearer t1")
+    }
+
+    func testAMalformedChipChallengeIsAnError() async throws {
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"challenge":"xyz","expires_at":1}"#.utf8)) }
+        do {
+            _ = try await client().fetchChipChallenge()
+            XCTFail("Expected error")
+        } catch {}
+    }
+
+    func testValidateChipSendsTheActiveAuthenticationSignature() async throws {
+        var body = Data()
+        SessionMockURLProtocol.handler = { _, data in body = data; return (200, Data(#"{"valid":true,"issues":[],"retained":true,"usable_as_document":true}"#.utf8)) }
+        let result = try await client().validateChip([.dg1: Data([0x61]), .dg15: Data([0x6F]), .sod: Data([0x77])], documentType: .passport,
+                                                     activeAuthenticationSignature: Data([0xAA, 0xBB]))
+        XCTAssertEqual(result?.usableAsDocument, true)
+        let text = String(decoding: body, as: UTF8.self)
+        XCTAssertTrue(text.contains("name=\"aa_signature\"; filename=\"aa_signature.bin\"\r\nContent-Type: application/octet-stream"), text)
+    }
+
+    func testValidateChipWithoutASignatureSendsNone() async throws {
+        var body = Data()
+        SessionMockURLProtocol.handler = { _, data in body = data; return (200, Data(#"{"valid":true,"issues":[],"retained":true}"#.utf8)) }
+        let result = try await client().validateChip([.dg1: Data([0x61]), .sod: Data([0x77])], documentType: .passport)
+        XCTAssertNil(result?.usableAsDocument)
+        XCTAssertFalse(String(decoding: body, as: UTF8.self).contains("aa_signature"))
+    }
+
+    func testModeCarriesTheSessionChipPolicy() async throws {
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"full","chip_policy":"instead_of_photo"}"#.utf8)) }
+        let policy = try await client().fetchMode().chipPolicy
+        XCTAssertEqual(policy, .insteadOfPhoto)
+    }
+
+    func testAnUnknownOrMissingChipPolicyIsNil() async throws {
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"full","chip_policy":"something_new","lang":"sv"}"#.utf8)) }
+        let mode = try await client().fetchMode()
+        XCTAssertNil(mode.chipPolicy)
+        XCTAssertEqual(mode.lang, "sv")
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"liveness_only"}"#.utf8)) }
+        let older = try await client().fetchMode()
+        XCTAssertNil(older.chipPolicy)
+    }
+
+    func testSubmitSaysWhyItNeedsADocument() async throws {
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"ok":true,"status":"document_required","reason":"chip_not_usable"}"#.utf8)) }
+        let result = try await client().submit(SessionSubmission(documentType: .passport))
+        XCTAssertEqual(result.status, .documentRequired)
+        XCTAssertEqual(result.reason, .chipNotUsable)
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"ok":true,"status":"document_required","reason":"later_reason"}"#.utf8)) }
+        let unknown = try await client().submit(SessionSubmission(documentType: .passport))
+        XCTAssertNil(unknown.reason)
+    }
+
     func testValidateChipUploadsRawFiles() async throws {
         var body = Data()
         SessionMockURLProtocol.handler = { _, data in body = data; return (200, Data(#"{"valid":true,"issues":[],"retained":true}"#.utf8)) }

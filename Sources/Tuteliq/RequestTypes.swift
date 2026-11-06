@@ -220,4 +220,5 @@ struct BatchItemData: Encodable {
 struct CreateVerificationSessionRequest: Encodable {
     let mode: String
     var documentType: String?
+    var chipPolicy: String?
 }

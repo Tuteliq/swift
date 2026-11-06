@@ -11,9 +11,12 @@ public protocol VerificationSessionAPI: Sendable {
     func fetchLivenessChallenge() async throws -> LivenessChallenge
     /// `context` describes the capture (see ``CaptureContext``); pass `nil` when unknown.
     func validateDocument(_ jpeg: Data, side: DocumentSide, documentType: DocumentType, captureSource: DocumentCaptureSource, context: CaptureContext?) async throws -> DocumentValidationResult
-    /// Uploads the raw, signed files read from a document's chip. `nil` when the API
+    /// A fresh challenge for the document's chip to sign (Active Authentication).
+    func fetchChipChallenge() async throws -> ChipChallenge
+    /// Uploads the raw, signed files read from a document's chip, with the chip's
+    /// signature over the session's challenge when it gave one. `nil` when the API
     /// doesn't offer chip validation.
-    func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, context: CaptureContext?) async throws -> ChipValidationResult?
+    func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, activeAuthenticationSignature: Data?, context: CaptureContext?) async throws -> ChipValidationResult?
     func validateSelfie(_ jpeg: Data, liveness: LivenessCapture?, context: CaptureContext?) async throws -> SelfieValidationResult
     func submit(_ submission: SessionSubmission) async throws -> SessionSubmitResult
 }
@@ -26,7 +29,11 @@ public extension VerificationSessionAPI {
     }
 
     func validateChip(_ files: [ChipFile: Data], documentType: DocumentType) async throws -> ChipValidationResult? {
-        try await validateChip(files, documentType: documentType, context: nil)
+        try await validateChip(files, documentType: documentType, activeAuthenticationSignature: nil, context: nil)
+    }
+
+    func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, context: CaptureContext?) async throws -> ChipValidationResult? {
+        try await validateChip(files, documentType: documentType, activeAuthenticationSignature: nil, context: context)
     }
 
     func validateSelfie(_ jpeg: Data, liveness: LivenessCapture?) async throws -> SelfieValidationResult {

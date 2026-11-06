@@ -1612,10 +1612,14 @@ public struct CreateVerificationSessionInput: Sendable {
     public var mode: VerificationMode
     /// Document type to verify.
     public var documentType: DocumentType?
+    /// How a passport or ID card chip read counts as document evidence. `nil` leaves
+    /// the server's default, ``ChipPolicy/optional``.
+    public var chipPolicy: ChipPolicy?
 
-    public init(mode: VerificationMode, documentType: DocumentType? = nil) {
+    public init(mode: VerificationMode, documentType: DocumentType? = nil, chipPolicy: ChipPolicy? = nil) {
         self.mode = mode
         self.documentType = documentType
+        self.chipPolicy = chipPolicy
     }
 }
 
@@ -1632,6 +1636,8 @@ public struct VerificationSession: Codable, Sendable {
     public let verificationMode: String?
     /// Camera capture width the API recommends, in pixels.
     public let recommendedImageWidth: Int?
+    /// How a chip read counts as document evidence for this session.
+    public let chipPolicy: ChipPolicy?
 
     /// ``expiresAt`` as a `Date`.
     public var expiresAtDate: Date {
@@ -1645,6 +1651,7 @@ public struct VerificationSession: Codable, Sendable {
         case mode
         case verificationMode = "verification_mode"
         case recommendedImageWidth = "recommended_image_width"
+        case chipPolicy = "chip_policy"
     }
 }
 
@@ -1776,14 +1783,27 @@ public struct VerificationResult: Codable, Sendable {
     /// Extracted KYC fields. Only present on the first poll after the session
     /// finishes; later polls return the decision only.
     public let document: VerificationDocument?
+    /// What the document evidence was. `nil` for a check on a live face alone.
+    public let documentEvidence: VerificationDocumentEvidence?
 
     enum CodingKeys: String, CodingKey {
         case status, age, liveness, document
+        case documentEvidence = "document_evidence"
         case dateOfBirth = "date_of_birth"
         case isMinor = "is_minor"
         case faceMatch = "face_match"
         case failureReasons = "failure_reasons"
     }
+}
+
+/// What a verification's document evidence was.
+public enum VerificationDocumentEvidence: String, Codable, Sendable {
+    /// The photographed document.
+    case photo
+    /// The document's chip, standing in for the photo.
+    case chip
+    /// The photographed document and its chip.
+    case photoAndChip = "photo_and_chip"
 }
 
 /// Result of polling a verification session.
@@ -1798,11 +1818,17 @@ public struct VerificationSessionResult: Codable, Sendable {
     public let createdAt: Int64?
     /// Epoch milliseconds.
     public let expiresAt: Int64?
+    /// How a chip read counts as document evidence, as set when the session was created.
+    public let chipPolicy: ChipPolicy?
+    /// Present once there is a result that rests on a document: a photo, the chip read, or both.
+    public let documentEvidence: VerificationDocumentEvidence?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
         case status, result
         case stepProgress = "step_progress"
+        case chipPolicy = "chip_policy"
+        case documentEvidence = "document_evidence"
         case createdAt = "created_at"
         case expiresAt = "expires_at"
     }

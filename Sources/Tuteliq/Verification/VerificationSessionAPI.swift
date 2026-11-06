@@ -13,10 +13,13 @@ public protocol VerificationSessionAPI: Sendable {
     func validateDocument(_ jpeg: Data, side: DocumentSide, documentType: DocumentType, captureSource: DocumentCaptureSource, context: CaptureContext?) async throws -> DocumentValidationResult
     /// A fresh challenge for the document's chip to sign (Active Authentication).
     func fetchChipChallenge() async throws -> ChipChallenge
+    /// Starts Chip Authentication with the chip's DG14: the commands to relay to the chip.
+    func startChipAuthentication(dg14: Data) async throws -> ChipAuthenticationCommands
     /// Uploads the raw, signed files read from a document's chip, with the chip's
-    /// signature over the session's challenge when it gave one. `nil` when the API
-    /// doesn't offer chip validation.
-    func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, activeAuthenticationSignature: Data?, context: CaptureContext?) async throws -> ChipValidationResult?
+    /// signature over the session's challenge, or its Chip Authentication response,
+    /// when there is one. `nil` when the API doesn't offer chip validation.
+    func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, activeAuthenticationSignature: Data?,
+                      chipAuthenticationResponse: Data?, context: CaptureContext?) async throws -> ChipValidationResult?
     func validateSelfie(_ jpeg: Data, liveness: LivenessCapture?, context: CaptureContext?) async throws -> SelfieValidationResult
     func submit(_ submission: SessionSubmission) async throws -> SessionSubmitResult
 }
@@ -29,11 +32,18 @@ public extension VerificationSessionAPI {
     }
 
     func validateChip(_ files: [ChipFile: Data], documentType: DocumentType) async throws -> ChipValidationResult? {
-        try await validateChip(files, documentType: documentType, activeAuthenticationSignature: nil, context: nil)
+        try await validateChip(files, documentType: documentType, activeAuthenticationSignature: nil, chipAuthenticationResponse: nil, context: nil)
     }
 
     func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, context: CaptureContext?) async throws -> ChipValidationResult? {
-        try await validateChip(files, documentType: documentType, activeAuthenticationSignature: nil, context: context)
+        try await validateChip(files, documentType: documentType, activeAuthenticationSignature: nil, chipAuthenticationResponse: nil, context: context)
+    }
+
+    func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, activeAuthenticationSignature: Data?,
+                      context: CaptureContext?) async throws -> ChipValidationResult?
+    {
+        try await validateChip(files, documentType: documentType, activeAuthenticationSignature: activeAuthenticationSignature,
+                               chipAuthenticationResponse: nil, context: context)
     }
 
     func validateSelfie(_ jpeg: Data, liveness: LivenessCapture?) async throws -> SelfieValidationResult {

@@ -112,6 +112,43 @@ public struct ChipChallenge: Decodable, Sendable, Equatable {
     }
 }
 
+/// The commands for a chip's Chip Authentication, from
+/// ``VerificationSessionClient/startChipAuthentication(dg14:)``. The server
+/// keeps the session keys; the app only relays these to the chip.
+public struct ChipAuthenticationCommands: Decodable, Sendable, Equatable {
+    /// Sent in order under the chip session the app already has; each must answer 9000.
+    public let commands: [Data]
+    /// Sent as is, after ``commands``, outside that session. The chip's complete
+    /// response to it goes to `validateChip` as the chip authentication response.
+    public let protectedCommand: Data
+    public let expiresAt: Date
+
+    public init(commands: [Data], protectedCommand: Data, expiresAt: Date) {
+        self.commands = commands
+        self.protectedCommand = protectedCommand
+        self.expiresAt = expiresAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        func bytes(_ hex: String) throws -> Data {
+            guard let data = Data(hex: hex), !data.isEmpty else {
+                throw DecodingError.dataCorruptedError(forKey: .commands, in: container, debugDescription: "Not a hex APDU")
+            }
+            return data
+        }
+        commands = try container.decode([String].self, forKey: .commands).map(bytes)
+        protectedCommand = try bytes(container.decode(String.self, forKey: .protectedCommand))
+        expiresAt = try Date(timeIntervalSince1970: container.decode(Double.self, forKey: .expiresAt) / 1000)
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case commands
+        case protectedCommand = "protected_command"
+        case expiresAt = "expires_at"
+    }
+}
+
 private extension Data {
     init?(hex: String) {
         guard hex.count % 2 == 0 else { return nil }

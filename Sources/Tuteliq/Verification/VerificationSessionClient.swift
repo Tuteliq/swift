@@ -109,6 +109,18 @@ public final class VerificationSessionClient: Sendable {
         try await send(request(path: sessionPath + "/chip-challenge", method: "GET"))
     }
 
+    /// `POST /verify/session/{id}/chip-authentication`: starts Chip Authentication
+    /// with the chip's DG14, for chips that prove they are the original that way
+    /// rather than with Active Authentication. Relay the returned commands to the
+    /// chip after reading every file, and upload its response to the protected
+    /// command with ``validateChip(_:documentType:activeAuthenticationSignature:chipAuthenticationResponse:context:)``.
+    public func startChipAuthentication(dg14: Data) async throws -> ChipAuthenticationCommands {
+        var request = request(path: sessionPath + "/chip-authentication", method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["dg14": dg14.base64EncodedString()])
+        return try await send(request)
+    }
+
     /// `POST /session/:id/validate-chip`: uploads the raw, signed chip files for
     /// server-side passive authentication and data extraction, and the chip's
     /// signature over ``fetchChipChallenge()``'s challenge when it gave one.
@@ -121,6 +133,7 @@ public final class VerificationSessionClient: Sendable {
         _ files: [ChipFile: Data],
         documentType: DocumentType,
         activeAuthenticationSignature: Data? = nil,
+        chipAuthenticationResponse: Data? = nil,
         context: CaptureContext? = nil
     ) async throws -> ChipValidationResult? {
         var form = MultipartForm()
@@ -132,6 +145,9 @@ public final class VerificationSessionClient: Sendable {
         }
         if let signature = activeAuthenticationSignature, !signature.isEmpty {
             form.addFile("aa_signature", filename: "aa_signature.bin", mimeType: "application/octet-stream", data: signature)
+        }
+        if let response = chipAuthenticationResponse, !response.isEmpty {
+            form.addFile("ca_response", filename: "ca_response.bin", mimeType: "application/octet-stream", data: response)
         }
         do {
             return try await send(multipart(path: sessionPath + "/validate-chip", form: form))

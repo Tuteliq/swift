@@ -227,6 +227,43 @@ final class SessionClientTests: XCTestCase {
         } catch {}
     }
 
+    func testStartChipAuthenticationSendsDG14AndDecodesTheCommands() async throws {
+        var captured: URLRequest?
+        var sent = Data()
+        SessionMockURLProtocol.handler = { request, body in
+            captured = request
+            sent = body
+            return (200, Data(#"{"commands":["002241a4","00860000"],"protected_command":"0cb08100","expires_at":1760000120000}"#.utf8))
+        }
+        let start = try await client().startChipAuthentication(dg14: Data([0x6E, 0x01, 0x02]))
+        XCTAssertEqual(start.commands, [Data([0x00, 0x22, 0x41, 0xA4]), Data([0x00, 0x86, 0x00, 0x00])])
+        XCTAssertEqual(start.protectedCommand, Data([0x0C, 0xB0, 0x81, 0x00]))
+        XCTAssertEqual(start.expiresAt, Date(timeIntervalSince1970: 1_760_000_120))
+        XCTAssertEqual(captured?.url?.absoluteString, "https://api.tuteliq.ai/api/v1/verify/session/s1/chip-authentication")
+        XCTAssertEqual(captured?.httpMethod, "POST")
+        XCTAssertEqual(captured?.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: sent) as? [String: String])
+        XCTAssertEqual(json, ["dg14": "bgEC"])
+    }
+
+    func testMalformedChipAuthenticationCommandsAreAnError() async throws {
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"commands":["zz"],"protected_command":"0c","expires_at":1}"#.utf8)) }
+        do {
+            _ = try await client().startChipAuthentication(dg14: Data([0x6E]))
+            XCTFail("Expected error")
+        } catch {}
+    }
+
+    func testValidateChipSendsTheChipAuthenticationResponse() async throws {
+        var body = Data()
+        SessionMockURLProtocol.handler = { _, data in body = data; return (200, Data(#"{"valid":true,"issues":[],"retained":true,"usable_as_document":true}"#.utf8)) }
+        _ = try await client().validateChip([.dg1: Data([0x61]), .dg14: Data([0x6E]), .sod: Data([0x77])], documentType: .passport,
+                                            chipAuthenticationResponse: Data([0x99, 0x02, 0x90, 0x00]))
+        let text = String(decoding: body, as: UTF8.self)
+        XCTAssertTrue(text.contains("name=\"ca_response\"; filename=\"ca_response.bin\"\r\nContent-Type: application/octet-stream"), text)
+        XCTAssertFalse(text.contains("aa_signature"))
+    }
+
     func testValidateChipSendsTheActiveAuthenticationSignature() async throws {
         var body = Data()
         SessionMockURLProtocol.handler = { _, data in body = data; return (200, Data(#"{"valid":true,"issues":[],"retained":true,"usable_as_document":true}"#.utf8)) }

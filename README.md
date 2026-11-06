@@ -589,8 +589,13 @@ if !front.valid { /* show front.issues.first and retake */ }
 // reading it and have the chip sign it (Active Authentication), so the server can tell
 // the original chip from a copy. mode.chipPolicy says what the session asks for.
 let challenge = try await api.fetchChipChallenge()     // single use, valid for a short time
-let chip = try await api.validateChip([.com: efCOM, .dg1: dg1, .dg15: dg15, .sod: efSOD], documentType: .passport,
-                                      activeAuthenticationSignature: signature)  // nil if not offered
+// Chips without Active Authentication (most recent European passports) prove the same with
+// Chip Authentication: after reading every file, send DG14 here, send the commands to the chip
+// (the first ones under your secure messaging, protectedCommand as is) and keep its answer.
+let ca = try await api.startChipAuthentication(dg14: dg14)
+let chip = try await api.validateChip([.com: efCOM, .dg1: dg1, .dg14: dg14, .sod: efSOD], documentType: .passport,
+                                      activeAuthenticationSignature: signature,   // or nil
+                                      chipAuthenticationResponse: caAnswer)       // or nil
 if chip?.usableAsDocument == true { /* under .insteadOfPhoto, no document photo is needed */ }
 
 // Liveness: fetch a signed challenge (on the server's clock), run your own detection, then build the token.

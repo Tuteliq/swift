@@ -547,6 +547,7 @@ print(session.url, session.expiresAtDate)
 let status = try await tuteliq.getVerificationSession(id: session.sessionId)
 if status.status == .completed, let result = status.result {
     print(result.status)                  // .verified, .failed, .needsReview
+    print(result.documentEvidence ?? .photo)  // .photo, .chip or .photoAndChip
     print(result.age ?? -1, result.isMinor ?? false)
     print(result.document?.countryCode ?? "")
 }
@@ -559,6 +560,8 @@ let age = try await tuteliq.getAgeVerification(id: "vrf_…")
 let identity = try await tuteliq.getIdentityVerification(id: "vrf_…")
 print(age.livenessValid, identity.faceConfidence ?? 0)
 ```
+
+**Chip policy.** `chipPolicy` on `CreateVerificationSessionInput` sets how a passport or ID card chip read counts as document evidence: `.optional` (the default: the document photo is required and a chip read adds to it), `.required` (the photo and a chip read that proves itself genuine), or `.insteadOfPhoto` (a chip read that proves itself genuine replaces the photo; otherwise the user photographs the document). The server enforces it, so the app can't change it. The hosted page has no chip step: it always uses the photo, so a `.required` session can only be completed in a native app on an iPhone that reads chips.
 
 | | Age | Identity |
 |---|---|---|
@@ -582,8 +585,18 @@ await api.reportProgress(.connected)            // drives the integrator's live 
 let front = try await api.validateDocument(passportJPEG, side: .passport, documentType: .passport, captureSource: .camera)
 if !front.valid { /* show front.issues.first and retake */ }
 
-// Optional: raw files read from the document's NFC chip.
-let chip = try await api.validateChip([.com: efCOM, .dg1: dg1, .sod: efSOD], documentType: .passport)  // nil if not offered
+// Optional: raw files read from the document's NFC chip. Fetch a challenge just before
+// reading it and have the chip sign it (Active Authentication), so the server can tell
+// the original chip from a copy. mode.chipPolicy says what the session asks for.
+let challenge = try await api.fetchChipChallenge()     // single use, valid for a short time
+// Chips without Active Authentication (most recent European passports) prove the same with
+// Chip Authentication: after reading every file, send DG14 here, send the commands to the chip
+// (the first ones under your secure messaging, protectedCommand as is) and keep its answer.
+let ca = try await api.startChipAuthentication(dg14: dg14)
+let chip = try await api.validateChip([.com: efCOM, .dg1: dg1, .dg14: dg14, .sod: efSOD], documentType: .passport,
+                                      activeAuthenticationSignature: signature,   // or nil
+                                      chipAuthenticationResponse: caAnswer)       // or nil
+if chip?.usableAsDocument == true { /* under .insteadOfPhoto, no document photo is needed */ }
 
 // Liveness: fetch a signed challenge (on the server's clock), run your own detection, then build the token.
 var token = try await api.startLiveness()

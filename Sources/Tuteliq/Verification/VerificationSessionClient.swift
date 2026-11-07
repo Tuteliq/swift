@@ -103,20 +103,51 @@ public final class VerificationSessionClient: Sendable {
         return try await send(multipart(path: sessionPath + "/validate-document", form: form))
     }
 
+    /// `GET /session/:id/chip-challenge`: a fresh challenge for the chip to sign.
+    /// Each call replaces the previous challenge.
+    public func fetchChipChallenge() async throws -> ChipChallenge {
+        try await send(request(path: sessionPath + "/chip-challenge", method: "GET"))
+    }
+
+    /// `POST /verify/session/{id}/chip-authentication`: starts Chip Authentication
+    /// with the chip's DG14, for chips that prove they are the original that way
+    /// rather than with Active Authentication. Relay the returned commands to the
+    /// chip after reading every file, and upload its response to the protected
+    /// command with ``validateChip(_:documentType:activeAuthenticationSignature:chipAuthenticationResponse:context:)``.
+    public func startChipAuthentication(dg14: Data) async throws -> ChipAuthenticationCommands {
+        var request = request(path: sessionPath + "/chip-authentication", method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["dg14": dg14.base64EncodedString()])
+        return try await send(request)
+    }
+
     /// `POST /session/:id/validate-chip`: uploads the raw, signed chip files for
-    /// server-side passive authentication and data extraction.
+    /// server-side passive authentication and data extraction, and the chip's
+    /// signature over ``fetchChipChallenge()``'s challenge when it gave one.
     ///
     /// Returns `nil` when the API doesn't offer chip validation (its route-not-found
     /// answer, `NF_5002`), so callers can continue with the photographed document
     /// alone. Any other 404, such as a missing session, a wrong base URL or a proxy,
     /// is thrown, so chip evidence is never dropped silently.
-    public func validateChip(_ files: [ChipFile: Data], documentType: DocumentType, context: CaptureContext? = nil) async throws -> ChipValidationResult? {
+    public func validateChip(
+        _ files: [ChipFile: Data],
+        documentType: DocumentType,
+        activeAuthenticationSignature: Data? = nil,
+        chipAuthenticationResponse: Data? = nil,
+        context: CaptureContext? = nil
+    ) async throws -> ChipValidationResult? {
         var form = MultipartForm()
         form.addField("document_type", documentType.rawValue)
         form.addContext(context)
         for file in ChipFile.allCases {
             guard let data = files[file] else { continue }
             form.addFile(file.rawValue, filename: "\(file.rawValue).bin", mimeType: "application/octet-stream", data: data)
+        }
+        if let signature = activeAuthenticationSignature, !signature.isEmpty {
+            form.addFile("aa_signature", filename: "aa_signature.bin", mimeType: "application/octet-stream", data: signature)
+        }
+        if let response = chipAuthenticationResponse, !response.isEmpty {
+            form.addFile("ca_response", filename: "ca_response.bin", mimeType: "application/octet-stream", data: response)
         }
         do {
             return try await send(multipart(path: sessionPath + "/validate-chip", form: form))

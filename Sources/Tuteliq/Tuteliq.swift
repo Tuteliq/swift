@@ -1138,6 +1138,7 @@ public final class Tuteliq: @unchecked Sendable {
     public func createVerificationSession(_ input: CreateVerificationSessionInput) async throws -> VerificationSession {
         var body = CreateVerificationSessionRequest(mode: input.mode.rawValue)
         body.documentType = input.documentType?.rawValue
+        body.chipPolicy = input.chipPolicy?.rawValue
         return try await request(method: "POST", path: "/api/v1/verify/session", body: body)
     }
 

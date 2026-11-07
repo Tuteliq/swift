@@ -1272,10 +1272,50 @@ final class TuteliqTests: XCTestCase {
             CreateVerificationSessionInput(mode: .age, documentType: .nationalId)
         )
 
+        XCTAssertNil(body["chip_policy"])
         XCTAssertEqual(session.sessionId, "vs_test123")
         XCTAssertEqual(capturedRequest?.httpMethod, "POST")
         XCTAssertEqual(body["document_type"] as? String, "national_id")
         XCTAssertTrue(capturedRequest?.url?.path.contains("/api/v1/verify/session") ?? false)
+    }
+
+    func testCreateVerificationSessionSendsTheChipPolicy() async throws {
+        var body: [String: Any] = [:]
+        let client = try makeClient { request in
+            if let data = request.httpBodyStream.map(Self.readAll) ?? request.httpBody {
+                body = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            }
+            return self.mockResponse(statusCode: 201, json: [
+                "session_id": "vs_test123",
+                "mobile_url": "https://verify.tuteliq.ai/age/?session=vs_test123&token=t",
+                "expires_at": Int64(1_760_000_000_000),
+                "mode": "identity",
+                "chip_policy": "instead_of_photo",
+            ])
+        }
+        let session = try await client.createVerificationSession(
+            CreateVerificationSessionInput(mode: .identity, chipPolicy: .insteadOfPhoto)
+        )
+        XCTAssertEqual(body["chip_policy"] as? String, "instead_of_photo")
+        XCTAssertEqual(session.chipPolicy, .insteadOfPhoto)
+    }
+
+    func testVerificationSessionResultSaysWhatTheDocumentEvidenceWas() throws {
+        let json: [String: Any] = [
+            "session_id": "vs_abc123",
+            "status": "completed",
+            "chip_policy": "instead_of_photo",
+            "document_evidence": "chip",
+            "result": [
+                "status": "verified",
+                "liveness": ["valid": true],
+                "document_evidence": "chip",
+            ],
+        ]
+        let result = try JSONDecoder().decode(VerificationSessionResult.self, from: jsonData(json))
+        XCTAssertEqual(result.chipPolicy, .insteadOfPhoto)
+        XCTAssertEqual(result.documentEvidence, .chip)
+        XCTAssertEqual(result.result?.documentEvidence, .chip)
     }
 
     func testCancelVerificationSessionDecodesOk() async throws {

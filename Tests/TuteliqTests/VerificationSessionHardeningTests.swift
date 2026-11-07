@@ -320,11 +320,10 @@ final class SessionClientCoverageTests: XCTestCase {
         XCTAssertFalse(text.contains("name=\"passport\""))
     }
 
-    /// Raw facial measurements stay on the device; the derived verdict and pass rates are sent.
-    func testCaptureContextSendsNoRawFacialMeasurements() throws {
+    /// Only the derived verdict, counts and pass rates are sent: no facial measurement.
+    func testCaptureContextSendsOnlyTheDerivedDepthResult() throws {
         let depth = LivenessDepthEvidence(
-            sensor: "truedepth", verdict: .live, framesAnalyzed: 10, framesWithDepth: 9, reliefPassRate: 0.9, sizePassRate: 1,
-            noseReliefMM: 18.5, interpupillaryMM: 61.2, distanceCM: 32, coverage: 0.8
+            sensor: "truedepth", verdict: .live, framesAnalyzed: 10, framesWithDepth: 9, reliefPassRate: 0.9, sizePassRate: 1, coverage: 0.8
         )
         let context = CaptureContext(
             sdk: .init(name: "x", version: "1", platform: "ios", osVersion: "26.0", deviceModel: "iPhone17,1"),
@@ -332,12 +331,9 @@ final class SessionClientCoverageTests: XCTestCase {
             face: .init(camera: "truedepth", livenessEngine: "e", livenessEngineVersion: 1, depth: depth)
         )
         let json = try XCTUnwrap(context.encodedJSON())
-        for raw in ["nose_relief", "interpupillary", "distance_cm", "18.5", "61.2"] {
-            XCTAssertFalse(json.contains(raw), raw)
-        }
-        XCTAssertTrue(json.contains("\"relief_pass_rate\":0.9"))
-        XCTAssertTrue(json.contains("\"verdict\":\"live\""))
-        // Still available on the device, e.g. for a debug overlay.
-        XCTAssertEqual(depth.interpupillaryMM, 61.2)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let face = try XCTUnwrap(object["face"] as? [String: Any])
+        let sent = try XCTUnwrap(face["depth"] as? [String: Any])
+        XCTAssertEqual(Set(sent.keys), ["sensor", "verdict", "frames_analyzed", "frames_with_depth", "relief_pass_rate", "size_pass_rate", "coverage"])
     }
 }

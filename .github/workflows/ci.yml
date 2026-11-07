@@ -8,13 +8,14 @@ on:
 
 jobs:
   test:
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+      # The image's default Xcode: GitHub retired macos-14 and its Xcode 15.2.
+      - name: Show Xcode
+        run: xcodebuild -version
 
       # 'swift package audit' is not a real SwiftPM subcommand -- this step
       # previously always "passed" via `|| true` while actually erroring
@@ -37,13 +38,14 @@ jobs:
         run: xcodebuild build-for-testing -quiet -scheme Tuteliq -destination 'generic/platform=watchOS'
 
   lint:
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v7
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+      # The image's default Xcode: GitHub retired macos-14 and its Xcode 15.2.
+      - name: Show Xcode
+        run: xcodebuild -version
 
       # Pinned so a new SwiftFormat release (and its new default rules) can't
       # turn CI red on unchanged code. Bump the version and checksum together.

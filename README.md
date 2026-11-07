@@ -649,7 +649,7 @@ It sends no image and no facial measurement. Leave out `capture_context` entirel
 
 ### Native Verification (licensed add-on)
 
-The hosted verification flow above works with this SDK alone. For a fully native iOS flow (document capture with on-device MRZ reading, NFC passport and ID chip reading, liveness and selfie, all in SwiftUI), Tuteliq offers **Tuteliq Verification**, a separate package that builds on this one. It requires a verification license; contact [Tuteliq](https://tuteliq.ai) for access.
+The hosted verification flow above works with this SDK alone. For a fully native iOS flow (document capture with on-device MRZ reading, NFC passport and ID chip reading, liveness and selfie, all in SwiftUI), Tuteliq offers **Tuteliq Verification**, a separate package that builds on this one. It requires a verification license; contact [Tuteliq](https://tuteliq.ai) for access. It ships with its own copy of this SDK's `Tuteliq` module, so add it instead of this package, not alongside it: everything here is available from it with `import Tuteliq`.
 
 ### Webhooks
 
@@ -994,14 +994,14 @@ Enable `PII_REDACTION_ENABLED=true` on your Tuteliq API to strip emails, phone n
 
 ## Security Best Practices
 
-**Never hardcode API keys** in your Swift source files. Strings embedded in the binary can be extracted with tools like `strings` — even from release builds. Instead, use the `.xcconfig` → Keychain flow described below.
+**Never hardcode API keys** in your Swift source files. Strings embedded in the binary can be extracted with tools like `strings`, even from release builds. Instead, use the `.xcconfig` → Keychain flow described below.
 
 ### Recommended Setup
 
 #### 1. Create a `Secrets.xcconfig` file (git-ignored)
 
 ```
-// Secrets.xcconfig — DO NOT commit this file
+// Secrets.xcconfig: DO NOT commit this file
 TUTELIQ_API_KEY = sk_live_your_key_here
 ```
 
@@ -1052,7 +1052,7 @@ try Tuteliq.removeAPIKey()
 
 ## Supported Languages
 
-Tuteliq supports **27 languages** with automatic detection — no configuration required.
+Tuteliq supports **27 languages** with automatic detection; no configuration required.
 
 **English** (stable) and **26 beta languages**: Spanish, Portuguese, Ukrainian, Swedish, Norwegian, Danish, Finnish, German, French, Dutch, Polish, Italian, Turkish, Romanian, Greek, Czech, Hungarian, Bulgarian, Croatian, Slovak, Lithuanian, Latvian, Estonian, Slovenian, Maltese, and Irish.
 
@@ -1077,9 +1077,9 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## Get Certified — Free
+## Get Certified for Free
 
-Tuteliq offers a **free certification program** for anyone who wants to deepen their understanding of online child safety. Complete a track, pass the quiz, and earn your official Tuteliq certificate — verified and shareable.
+Tuteliq offers a **free certification program** for anyone who wants to deepen their understanding of online child safety. Complete a track, pass the quiz, and earn your official Tuteliq certificate, verified and shareable.
 
 **Three tracks available:**
 
@@ -1091,7 +1091,7 @@ Tuteliq offers a **free certification program** for anyone who wants to deepen t
 
 **Start here →** [tuteliq.ai/certify](https://tuteliq.ai/certify)
 
-- 100% Free — no login required
+- 100% free, no login required
 - Verifiable certificate on completion
 - Covers grooming recognition, sextortion, cyberbullying, regulatory obligations (KOSA, EU DSA), and more
 
@@ -1104,13 +1104,13 @@ Before you decide to contribute or sponsor, read these numbers. They are not pro
 - **302 million** children are victims of online sexual exploitation and abuse every year. That is **10 children every second**. *(Childlight / University of Edinburgh, 2024)*
 - **1 in 8** children globally have been victims of non-consensual sexual imagery in the past year. *(Childlight, 2024)*
 - **370 million** girls and women alive today experienced rape or sexual assault in childhood. An estimated **240–310 million** boys and men experienced the same. *(UNICEF, 2024)*
-- **29.2 million** incidents of suspected child sexual exploitation were reported to NCMEC's CyberTipline in 2024 alone — containing **62.9 million files** (images, videos). *(NCMEC, 2025)*
-- **546,000** reports of online enticement (adults grooming children) in 2024 — a **192% increase** from the year before. *(NCMEC, 2025)*
+- **29.2 million** incidents of suspected child sexual exploitation were reported to NCMEC's CyberTipline in 2024 alone, containing **62.9 million files** (images, videos). *(NCMEC, 2025)*
+- **546,000** reports of online enticement (adults grooming children) in 2024, a **192% increase** from the year before. *(NCMEC, 2025)*
 - **1,325% increase** in AI-generated child sexual abuse material reports between 2023 and 2024. The technology that should protect children is being weaponized against them. *(NCMEC, 2025)*
 - **100 sextortion reports per day** to NCMEC. Since 2021, at least **36 teenage boys** have taken their own lives because they were victimized by sextortion. *(NCMEC, 2025)*
 - **84%** of reports resolve outside the United States. This is not an American problem. This is a **global emergency**. *(NCMEC, 2025)*
 
-End-to-end encryption is making platforms blind. In 2024, platforms reported **7 million fewer incidents** than the year before — not because abuse stopped, but because they can no longer see it. The tools that catch known images are failing. The systems that rely on human moderators are overwhelmed. The technology to detect behavior — grooming patterns, escalation, manipulation — in real-time text conversations **exists right now**. It is running at [api.tuteliq.ai](https://api.tuteliq.ai).
+End-to-end encryption is making platforms blind. In 2024, platforms reported **7 million fewer incidents** than the year before, not because abuse stopped, but because they can no longer see it. The tools that catch known images are failing. The systems that rely on human moderators are overwhelmed. The technology to detect behavior (grooming patterns, escalation, manipulation) in real-time text conversations **exists right now**. It is running at [api.tuteliq.ai](https://api.tuteliq.ai).
 
 The question is not whether this technology is possible. The question is whether we build the company to put it everywhere it needs to be.
 
@@ -1118,7 +1118,7 @@ The question is not whether this technology is possible. The question is whether
 
 We have the technology. We need the support.
 
-If this mission matters to you, consider [sponsoring our open-source work](https://github.com/sponsors/Tuteliq) so we can keep building the tools that protect children — and keep them free and accessible for everyone.
+If this mission matters to you, consider [sponsoring our open-source work](https://github.com/sponsors/Tuteliq) so we can keep building the tools that protect children, and keep them free and accessible for everyone.
 
 ---
 

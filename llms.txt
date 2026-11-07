@@ -1,6 +1,6 @@
 # Tuteliq Swift SDK
 
-> Official Swift SDK for Tuteliq — AI-powered child safety API for iOS, macOS, tvOS, watchOS, and visionOS.
+> Official Swift SDK for Tuteliq, the AI-powered child safety API for iOS, macOS, tvOS, watchOS, and visionOS.
 
 ## What is this?
 A Swift package for the Tuteliq child safety API. Detect bullying, grooming, self-harm, fraud, radicalisation, and other harms in text, conversations, voice, images, video, and PDF documents; detect AI-generated content; and run hosted age and identity verification. Works with iOS 15+, macOS 12+, tvOS 15+, watchOS 8+, and visionOS 1+.
@@ -23,10 +23,10 @@ if result.recommendedAction.isActionable { /* flag_for_review or stronger */ }
 - Fraud and extended harms: social engineering, app fraud, romance scams, mule recruitment, gambling harm, coercive control, vulnerability exploitation, radicalisation, distress signals, TFGBV, analyseMulti
 - Media: analyzeVoice, analyzeImage, analyzeVideo, analyzeDocument (PDF), real-time voiceStream
 - Synthetic content: detectSyntheticText/Image/Audio/Video
-- Verification: createVerificationSession / getVerificationSession (age and identity verification; Pro+ / Business+)
-- Session API for your own capture UI: VerificationSessionCredentials (session link: https on verify.tuteliq.ai only; uploads go to https://api.tuteliq.ai unless apiBaseURL is passed), VerificationSessionClient (mode, progress, startLiveness, validate-document, validate-chip, validate-selfie, submit), LivenessTokenBuilder, SessionSubmission
+- Verification: createVerificationSession / getVerificationSession (age and identity verification; Pro+ / Business+). chipPolicy (optional, required, insteadOfPhoto) sets how a passport or ID card chip read counts as document evidence; results report documentEvidence (photo, chip, photoAndChip)
+- Session API for your own capture UI: VerificationSessionCredentials (session link: https on verify.tuteliq.ai only; uploads go to https://api.tuteliq.ai unless apiBaseURL is passed), VerificationSessionClient (mode, progress, startLiveness, validate-document, fetchChipChallenge, startChipAuthentication, validate-chip, validate-selfie, submit), LivenessTokenBuilder, SessionSubmission
 - capture_context (CaptureContext) is untrusted device metadata: SDK, OS version and device model, cameras and on-device engines, derived verdicts and pass rates. No images and no raw facial measurements are sent.
-- Native iOS verification (document capture, NFC chip reading, liveness, selfie) is a separate, licensed package: Tuteliq Verification
+- Native iOS verification (document capture, NFC chip reading, liveness, selfie) is a separate, licensed package: Tuteliq Verification. It includes the Tuteliq module, so use it instead of this package, not alongside it
 - Platform: webhooks, policy and automation rules, detection settings, threat intelligence, incidents dashboard, moderator review, audit receipts, customer-managed encryption keys, GDPR data rights
 - Crisis helplines localised via `context.country` and `supportThreshold`
 - Keychain-backed API key storage

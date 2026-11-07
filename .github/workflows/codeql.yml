@@ -11,7 +11,7 @@ on:
 jobs:
   analyze:
     name: Analyze
-    runs-on: macos-14
+    runs-on: macos-15
 
     permissions:
       security-events: write
@@ -26,8 +26,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+      # The image's default Xcode: GitHub retired macos-14 and its Xcode 15.2.
+      - name: Show Xcode
+        run: xcodebuild -version
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4.39.1

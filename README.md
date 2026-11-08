@@ -81,11 +81,13 @@ Changes that need an edit:
 - **New enum cases.** An exhaustive `switch` over these enums needs the new cases or a `default`:
   - `RecommendedAction.block`
   - `TuteliqError.quotaExceededError`
+  - `VerificationError.chipReadingUnavailable`
   - `VerificationSessionStatus.documentRequired`
   - `BatchItem.text`
   - `Detection.distressSignals`, `.tfgbv` and `.syntheticContent`
   - `WebhookEventType.verificationCompleted`, `.minorDetected`, `.csamDetected` and `.csamCritical`
   - `Language`: 17 new languages
+- **A custom `VerificationSessionAPI` conformer** (a test fake or your own transport) must implement `fetchChipChallenge()`, `startChipAuthentication(dg14:)` and `validateChip(_:documentType:activeAuthenticationSignature:chipAuthenticationResponse:context:)`. The older `validateChip` call shapes still work for callers through default implementations, but a conformer's own `validateChip(_:documentType:context:)` no longer satisfies the protocol.
 - **`BatchItem.grooming`** gained `childAge`. Creating it is unchanged; a pattern that binds its values needs one more element: `case let .grooming(id, messages, context, childAge)`.
 - **Optional now, so unwrap where you read them** (the API can omit them):
   - `rationale` on `BullyingResult`, `UnsafeResult` and `DetectionResult`.

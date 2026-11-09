@@ -56,7 +56,7 @@ jobs:
       # the checksum is verified either way.
       - name: Restore SwiftFormat
         id: swiftformat-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ runner.temp }}/swiftformat.zip
           key: swiftformat-${{ env.SWIFTFORMAT_VERSION }}-${{ env.SWIFTFORMAT_SHA256 }}
@@ -70,7 +70,7 @@ jobs:
 
       - name: Save SwiftFormat
         if: steps.swiftformat-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: ${{ runner.temp }}/swiftformat.zip
           key: swiftformat-${{ env.SWIFTFORMAT_VERSION }}-${{ env.SWIFTFORMAT_SHA256 }}

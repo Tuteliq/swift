@@ -49,7 +49,7 @@ Add Tuteliq to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Tuteliq/swift.git", from: "3.0.0")
+    .package(url: "https://github.com/Tuteliq/swift.git", from: "3.1.0")
 ]
 ```
 
@@ -565,6 +565,8 @@ print(age.livenessValid, identity.faceConfidence ?? 0)
 
 **Chip policy.** `chipPolicy` on `CreateVerificationSessionInput` sets how a passport or ID card chip read counts as document evidence: `.optional` (the default: the document photo is required and a chip read adds to it), `.required` (the photo and a chip read that proves itself genuine), or `.insteadOfPhoto` (a chip read that proves itself genuine replaces the photo; otherwise the user photographs the document). The server enforces it, so the app can't change it. The hosted page has no chip step: it always uses the photo, so a `.required` session can only be completed in a native app on an iPhone that reads chips.
 
+**Auto-capture.** `autoCapture` on `CreateVerificationSessionInput` sets whether the capture UI takes the document photo itself once the document is framed, steady and sharp (`true`, the default), or the user taps Capture (`false`). The hosted page follows it, and it is returned on the session. In your own capture UI, read `mode.capturesAutomatically`.
+
 | | Age | Identity |
 |---|---|---|
 | Plan | Pro and above | Business, Enterprise |
@@ -580,7 +582,7 @@ Everything a native capture UI needs from the API is in this SDK, so you can bui
 let credentials = try VerificationSessionCredentials(sessionURL: session.url)
 let api = VerificationSessionClient(credentials: credentials)
 
-let mode = try await api.fetchMode()            // .full or .livenessOnly, language, age threshold…
+let mode = try await api.fetchMode()            // .full or .livenessOnly, language, age threshold, capturesAutomatically…
 await api.reportProgress(.connected)            // drives the integrator's live status
 
 // Document: upright JPEG(s), validated in the background while the user continues.

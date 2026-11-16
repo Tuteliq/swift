@@ -288,6 +288,28 @@ final class SessionClientTests: XCTestCase {
         XCTAssertEqual(policy, .insteadOfPhoto)
     }
 
+    func testModeCarriesTheSessionAutoCapture() async throws {
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"full","auto_capture":false}"#.utf8)) }
+        let off = try await client().fetchMode()
+        XCTAssertEqual(off.autoCapture, false)
+        XCTAssertFalse(off.capturesAutomatically)
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"full","auto_capture":true}"#.utf8)) }
+        let on = try await client().fetchMode()
+        XCTAssertTrue(on.capturesAutomatically)
+    }
+
+    func testAMissingOrUnreadableAutoCaptureMeansOn() async throws {
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"full"}"#.utf8)) }
+        let older = try await client().fetchMode()
+        XCTAssertNil(older.autoCapture)
+        XCTAssertTrue(older.capturesAutomatically)
+        SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"full","auto_capture":"sometimes","lang":"sv"}"#.utf8)) }
+        let odd = try await client().fetchMode()
+        XCTAssertNil(odd.autoCapture)
+        XCTAssertTrue(odd.capturesAutomatically)
+        XCTAssertEqual(odd.lang, "sv")
+    }
+
     func testAnUnknownOrMissingChipPolicyIsNil() async throws {
         SessionMockURLProtocol.handler = { _, _ in (200, Data(#"{"verification_mode":"full","chip_policy":"something_new","lang":"sv"}"#.utf8)) }
         let mode = try await client().fetchMode()

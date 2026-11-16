@@ -1139,6 +1139,7 @@ public final class Tuteliq: @unchecked Sendable {
         var body = CreateVerificationSessionRequest(mode: input.mode.rawValue)
         body.documentType = input.documentType?.rawValue
         body.chipPolicy = input.chipPolicy?.rawValue
+        body.autoCapture = input.autoCapture
         return try await request(method: "POST", path: "/api/v1/verify/session", body: body)
     }
 

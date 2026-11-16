@@ -1615,11 +1615,21 @@ public struct CreateVerificationSessionInput: Sendable {
     /// How a passport or ID card chip read counts as document evidence. `nil` leaves
     /// the server's default, ``ChipPolicy/optional``.
     public var chipPolicy: ChipPolicy?
+    /// Whether the capture UI takes the document photo itself once the document is
+    /// framed, steady and sharp. `false` means the user taps Capture. `nil` leaves
+    /// the server's default, `true`.
+    public var autoCapture: Bool?
 
-    public init(mode: VerificationMode, documentType: DocumentType? = nil, chipPolicy: ChipPolicy? = nil) {
+    public init(
+        mode: VerificationMode,
+        documentType: DocumentType? = nil,
+        chipPolicy: ChipPolicy? = nil,
+        autoCapture: Bool? = nil
+    ) {
         self.mode = mode
         self.documentType = documentType
         self.chipPolicy = chipPolicy
+        self.autoCapture = autoCapture
     }
 }
 
@@ -1638,6 +1648,8 @@ public struct VerificationSession: Codable, Sendable {
     public let recommendedImageWidth: Int?
     /// How a chip read counts as document evidence for this session.
     public let chipPolicy: ChipPolicy?
+    /// Whether the capture UI takes the document photo itself for this session.
+    public let autoCapture: Bool?
 
     /// ``expiresAt`` as a `Date`.
     public var expiresAtDate: Date {
@@ -1652,6 +1664,7 @@ public struct VerificationSession: Codable, Sendable {
         case verificationMode = "verification_mode"
         case recommendedImageWidth = "recommended_image_width"
         case chipPolicy = "chip_policy"
+        case autoCapture = "auto_capture"
     }
 }
 

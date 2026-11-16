@@ -33,6 +33,16 @@ public struct SessionModeInfo: Codable, Sendable, Equatable {
     /// How a chip read counts for this session. `nil` when the server doesn't say,
     /// which means ``ChipPolicy/optional``.
     public let chipPolicy: ChipPolicy?
+    /// Whether your capture UI should take the document photo itself once the
+    /// document is framed, steady and sharp. `nil` when the server doesn't say.
+    /// Read ``capturesAutomatically`` for the value to act on.
+    public let autoCapture: Bool?
+
+    /// Whether to take the document photo automatically: on unless the session
+    /// turned it off, so the user taps Capture.
+    public var capturesAutomatically: Bool {
+        autoCapture != false
+    }
 
     public init(
         verificationMode: SessionVerificationMode,
@@ -42,7 +52,8 @@ public struct SessionModeInfo: Codable, Sendable, Equatable {
         market: String? = nil,
         ageThreshold: Int? = nil,
         recommendedImageWidth: Int? = nil,
-        chipPolicy: ChipPolicy? = nil
+        chipPolicy: ChipPolicy? = nil,
+        autoCapture: Bool? = nil
     ) {
         self.verificationMode = verificationMode
         self.lang = lang
@@ -52,6 +63,7 @@ public struct SessionModeInfo: Codable, Sendable, Equatable {
         self.ageThreshold = ageThreshold
         self.recommendedImageWidth = recommendedImageWidth
         self.chipPolicy = chipPolicy
+        self.autoCapture = autoCapture
     }
 
     public init(from decoder: Decoder) throws {
@@ -65,6 +77,7 @@ public struct SessionModeInfo: Codable, Sendable, Equatable {
         recommendedImageWidth = try container.decodeIfPresent(Int.self, forKey: .recommendedImageWidth)
         // A policy this version doesn't know must not break the flow for an app already in users' hands.
         chipPolicy = container.decodeLenient(ChipPolicy.self, forKey: .chipPolicy)
+        autoCapture = container.decodeLenient(Bool.self, forKey: .autoCapture)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -73,6 +86,7 @@ public struct SessionModeInfo: Codable, Sendable, Equatable {
         case ageThreshold = "age_threshold"
         case recommendedImageWidth = "recommended_image_width"
         case chipPolicy = "chip_policy"
+        case autoCapture = "auto_capture"
     }
 }
 

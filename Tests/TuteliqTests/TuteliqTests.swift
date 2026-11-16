@@ -1273,6 +1273,8 @@ final class TuteliqTests: XCTestCase {
         )
 
         XCTAssertNil(body["chip_policy"])
+        XCTAssertNil(body["auto_capture"])
+        XCTAssertNil(session.autoCapture)
         XCTAssertEqual(session.sessionId, "vs_test123")
         XCTAssertEqual(capturedRequest?.httpMethod, "POST")
         XCTAssertEqual(body["document_type"] as? String, "national_id")
@@ -1298,6 +1300,49 @@ final class TuteliqTests: XCTestCase {
         )
         XCTAssertEqual(body["chip_policy"] as? String, "instead_of_photo")
         XCTAssertEqual(session.chipPolicy, .insteadOfPhoto)
+    }
+
+    func testCreateVerificationSessionSendsAutoCaptureFalseAndReturnsIt() async throws {
+        var body: [String: Any] = [:]
+        let client = try makeClient { request in
+            if let data = request.httpBodyStream.map(Self.readAll) ?? request.httpBody {
+                body = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            }
+            return self.mockResponse(statusCode: 201, json: [
+                "session_id": "vs_test123",
+                "mobile_url": "https://verify.tuteliq.ai/identity/?session=vs_test123&token=t",
+                "expires_at": Int64(1_760_000_000_000),
+                "mode": "identity",
+                "auto_capture": false,
+            ])
+        }
+        let session = try await client.createVerificationSession(
+            CreateVerificationSessionInput(mode: .identity, autoCapture: false)
+        )
+        // `false` is the value that matters, so it must be sent, not dropped.
+        XCTAssertEqual(body["auto_capture"] as? Bool, false)
+        XCTAssertEqual(session.autoCapture, false)
+    }
+
+    func testCreateVerificationSessionSendsAutoCaptureTrueWhenSet() async throws {
+        var body: [String: Any] = [:]
+        let client = try makeClient { request in
+            if let data = request.httpBodyStream.map(Self.readAll) ?? request.httpBody {
+                body = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+            }
+            return self.mockResponse(statusCode: 201, json: [
+                "session_id": "vs_test123",
+                "mobile_url": "https://verify.tuteliq.ai/age/?session=vs_test123&token=t",
+                "expires_at": Int64(1_760_000_000_000),
+                "mode": "age",
+                "auto_capture": true,
+            ])
+        }
+        let session = try await client.createVerificationSession(
+            CreateVerificationSessionInput(mode: .age, autoCapture: true)
+        )
+        XCTAssertEqual(body["auto_capture"] as? Bool, true)
+        XCTAssertEqual(session.autoCapture, true)
     }
 
     func testVerificationSessionResultSaysWhatTheDocumentEvidenceWas() throws {

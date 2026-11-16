@@ -221,4 +221,5 @@ struct CreateVerificationSessionRequest: Encodable {
     let mode: String
     var documentType: String?
     var chipPolicy: String?
+    var autoCapture: Bool?
 }

@@ -49,7 +49,7 @@ Add Tuteliq to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Tuteliq/swift.git", from: "3.1.0")
+    .package(url: "https://github.com/Tuteliq/swift.git", from: "3.2.0")
 ]
 ```
 
@@ -551,6 +551,10 @@ if status.status == .completed, let result = status.result {
     print(result.status)                  // .verified, .failed, .needsReview
     print(result.documentEvidence ?? .photo)  // .photo, .chip or .photoAndChip
     print(result.age ?? -1, result.isMinor ?? false)
+    if let face = result.faceMatch {
+        print(face.matched)               // true
+        print(face.matchScore ?? 0)       // 0.94: 0.5 at the match decision, near 0 for different people
+    }
     print(result.document?.countryCode ?? "")
 }
 
@@ -562,6 +566,8 @@ let age = try await tuteliq.getAgeVerification(id: "vrf_…")
 let identity = try await tuteliq.getIdentityVerification(id: "vrf_…")
 print(age.livenessValid, identity.faceConfidence ?? 0)
 ```
+
+**Face match score.** `faceMatch.matchScore` (0 to 1) shows how strongly the selfie matches the document photo. It reads 0.5 at the match decision, high for a clear match and near 0 for different people, so `matched` is true when it is above 0.5. `faceMatch.confidence` is unchanged and reads only about 0.55 on a clear match, so prefer `matchScore`. It is nil from an API version that does not send it.
 
 **Chip policy.** `chipPolicy` on `CreateVerificationSessionInput` sets how a passport or ID card chip read counts as document evidence: `.optional` (the default: the document photo is required and a chip read adds to it), `.required` (the photo and a chip read that proves itself genuine), or `.insteadOfPhoto` (a chip read that proves itself genuine replaces the photo; otherwise the user photographs the document). The server enforces it, so the app can't change it. The hosted page has no chip step: it always uses the photo, so a `.required` session can only be completed in a native app on an iPhone that reads chips.
 

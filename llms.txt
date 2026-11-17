@@ -7,7 +7,7 @@ A Swift package for the Tuteliq child safety API. Detect bullying, grooming, sel
 
 ## Install
 // Package.swift
-.package(url: "https://github.com/Tuteliq/swift.git", from: "3.1.0")
+.package(url: "https://github.com/Tuteliq/swift.git", from: "3.2.0")
 
 ## Quick Start
 import Tuteliq

@@ -1252,6 +1252,20 @@ final class TuteliqTests: XCTestCase {
         XCTAssertEqual(result.result?.document?.nationalId?.type, "personnummer")
     }
 
+    func testFaceMatchDecodesMatchScore() throws {
+        let withScore = try JSONDecoder().decode(
+            FaceMatchResult.self,
+            from: jsonData(["matched": true, "confidence": 0.55, "match_score": 0.94])
+        )
+        XCTAssertEqual(withScore.matchScore, 0.94)
+        XCTAssertEqual(withScore.confidence, 0.55)
+
+        // An API version before match_score leaves it out.
+        let without = try JSONDecoder().decode(FaceMatchResult.self, from: jsonData(["matched": true, "confidence": 0.55]))
+        XCTAssertNil(without.matchScore)
+        XCTAssertNil(without.distance)
+    }
+
     func testSuccessfulCreateVerificationSession() async throws {
         var body: [String: Any] = [:]
         var capturedRequest: URLRequest?

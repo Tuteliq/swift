@@ -1671,9 +1671,20 @@ public struct VerificationSession: Codable, Sendable {
 /// Face match result from verification.
 public struct FaceMatchResult: Codable, Sendable {
     public let matched: Bool
+    /// 1 minus the face distance (0-1). A clear match reads only about 0.55, so prefer `matchScore`.
     public let confidence: Double
     /// Distance between face descriptors (lower is more similar). Not returned by every endpoint.
     public let distance: Double?
+    /// How strongly the faces match (0-1): 0.5 at the match decision, high for a clear match, near 0 for
+    /// different people. Nil from API versions before it was added.
+    public let matchScore: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case matched
+        case confidence
+        case distance
+        case matchScore = "match_score"
+    }
 }
 
 /// Liveness check result from verification.

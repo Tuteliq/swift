@@ -108,6 +108,35 @@ extension TuteliqTests {
         XCTAssertEqual(body?["moderator_external_id"] as? String, "mod_jane")
     }
 
+    // MARK: - Action plan
+
+    func testActionPlanSendsCountryOnlyWhenSet() async throws {
+        var bodies: [[String: Any]] = []
+        let client = try makeClient { request in
+            if let data = Self.body(of: request),
+               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
+                bodies.append(body)
+            }
+            return self.mockResponse(json: [:])
+        }
+        _ = try? await client.getActionPlan(GetActionPlanInput(situation: "Invented situation", country: "SE"))
+        _ = try? await client.getActionPlan(GetActionPlanInput(situation: "Invented situation"))
+
+        XCTAssertEqual(bodies.count, 2)
+        XCTAssertEqual(bodies.first?["country"] as? String, "SE")
+        XCTAssertNil(bodies.last?["country"], "unset leaves the account's country")
+    }
+
+    func testActionPlanGeneralGuidanceDecodes() throws {
+        let tailored: [String: Any] = ["audience": "parent", "steps": ["Invented step"], "tone": "calm"]
+        var general = tailored
+        general["general_guidance"] = true
+
+        XCTAssertEqual(try JSONDecoder().decode(ActionPlanResult.self, from: jsonData(general)).generalGuidance, true)
+        XCTAssertNil(try JSONDecoder().decode(ActionPlanResult.self, from: jsonData(tailored)).generalGuidance)
+    }
+
     // MARK: - Values the API uses
 
     func testEnumsCarryTheAPIsValues() {

@@ -757,6 +757,9 @@ public struct GetActionPlanInput: Sendable {
     public var audience: Audience?
     /// Severity level for context.
     public var severity: Severity?
+    /// The family's country as an ISO 3166-1 alpha-2 code (for example `"SE"`), so the plan names
+    /// that country's helplines and emergency number. `nil` uses the account's country.
+    public var country: String?
     /// Your external correlation ID.
     public var externalId: String?
     /// Multi-tenant customer ID.
@@ -771,6 +774,7 @@ public struct GetActionPlanInput: Sendable {
         childAge: Int? = nil,
         audience: Audience? = nil,
         severity: Severity? = nil,
+        country: String? = nil,
         externalId: String? = nil,
         customerId: String? = nil,
         metadata: [String: Any]? = nil,
@@ -780,6 +784,7 @@ public struct GetActionPlanInput: Sendable {
         self.childAge = childAge
         self.audience = audience
         self.severity = severity
+        self.country = country
         self.externalId = externalId
         self.customerId = customerId
         self.metadata = metadata?.mapValues { AnyCodable($0) }
@@ -793,6 +798,9 @@ public struct ActionPlanResult: Codable, Sendable {
     public let steps: [String]
     public let tone: String
     public let readingLevel: String?
+    /// `true` when the plan is general guidance for any harm, given because a plan tailored to
+    /// the situation could not be written. `nil` (absent) for a tailored plan.
+    public let generalGuidance: Bool?
     public let creditsUsed: Int?
     public let externalId: String?
     public let customerId: String?
@@ -801,6 +809,7 @@ public struct ActionPlanResult: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case audience, steps, tone
         case readingLevel = "approx_reading_level"
+        case generalGuidance = "general_guidance"
         case creditsUsed = "credits_used"
         case externalId = "external_id"
         case customerId = "customer_id"

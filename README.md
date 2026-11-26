@@ -513,10 +513,12 @@ let plan = try await tuteliq.getActionPlan(
         situation: "Someone is spreading rumors about me",
         childAge: 12,
         audience: .child,   // .child, .parent, .platform
-        severity: .medium
+        severity: .medium,
+        country: "SE"       // ISO 3166-1 alpha-2; defaults to the account's country
     )
 )
 print(plan.steps)
+print(plan.generalGuidance == true)  // general guidance rather than a tailored plan
 
 let report = try await tuteliq.generateReport(
     GenerateReportInput(
@@ -529,6 +531,8 @@ let report = try await tuteliq.generateReport(
 )
 print(report.summary, report.riskLevel, report.recommendedNextSteps)
 ```
+
+`country` is the family's country as an ISO 3166-1 alpha-2 code, so the plan names that country's helplines and emergency number. It defaults to the account's country; with neither, the plan names the kind of service to contact. `generalGuidance` is `true` when the plan is general guidance for any harm, given because a plan tailored to the situation could not be written; it is `nil` for a tailored plan.
 
 ### Verification
 

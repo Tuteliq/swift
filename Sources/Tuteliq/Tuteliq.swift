@@ -399,6 +399,7 @@ public final class Tuteliq: @unchecked Sendable {
             situation: input.situation,
             childAge: input.childAge,
             severity: input.severity?.rawValue,
+            country: input.country,
             externalId: input.externalId,
             customerId: input.customerId,
             metadata: input.metadata,

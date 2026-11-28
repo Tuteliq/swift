@@ -390,16 +390,19 @@ public final class Tuteliq: @unchecked Sendable {
     /// Generate an age-appropriate action plan.
     ///
     /// - Parameter input: Action plan input with situation and target audience.
-    /// - Returns: Steps, tone, and reading level for the target audience.
-    /// - Throws: ``TuteliqError`` on failure.
+    /// - Returns: Steps, tone, and reading level for the target audience, and whether the plan is
+    ///   general guidance (``ActionPlanResult/generalGuidance``).
+    /// - Throws: ``TuteliqError/validationError(_:details:)`` if the situation is invalid or
+    ///   `country` is not a two-letter code; ``TuteliqError`` on failure.
     public func getActionPlan(_ input: GetActionPlanInput) async throws -> ActionPlanResult {
         try validateContent(input.situation, field: "Situation")
+        let country = try input.country.map(normalizeCountry)
         let body = ActionPlanRequest(
             role: (input.audience ?? .parent).rawValue,
             situation: input.situation,
             childAge: input.childAge,
             severity: input.severity?.rawValue,
-            country: input.country,
+            country: country,
             externalId: input.externalId,
             customerId: input.customerId,
             metadata: input.metadata,
@@ -1684,6 +1687,14 @@ public final class Tuteliq: @unchecked Sendable {
         guard content.count <= Self.maxContentLength else {
             throw TuteliqError.validationError("\(field) exceeds maximum length of \(Self.maxContentLength) characters")
         }
+    }
+
+    private func normalizeCountry(_ country: String) throws -> String {
+        let code = country.trimmingCharacters(in: .whitespaces).uppercased()
+        guard code.count == 2, code.allSatisfy({ $0.isASCII && $0.isLetter }) else {
+            throw TuteliqError.validationError("country must be an ISO 3166-1 alpha-2 code, for example \"SE\"")
+        }
+        return code
     }
 
     private func validateMessages<T>(_ messages: [T]) throws {

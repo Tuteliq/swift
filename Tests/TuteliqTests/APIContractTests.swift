@@ -108,6 +108,67 @@ extension TuteliqTests {
         XCTAssertEqual(body?["moderator_external_id"] as? String, "mod_jane")
     }
 
+    // MARK: - Action plan
+
+    func testActionPlanSendsCountryOnlyWhenSet() async throws {
+        var bodies: [[String: Any]] = []
+        let client = try makeClient { request in
+            if let data = Self.body(of: request),
+               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
+                bodies.append(body)
+            }
+            return self.mockResponse(json: ["audience": "parent", "steps": ["Invented step"], "tone": "calm"])
+        }
+        _ = try await client.getActionPlan(GetActionPlanInput(situation: "Invented situation", country: "SE"))
+        _ = try await client.getActionPlan(GetActionPlanInput(situation: "Invented situation"))
+
+        XCTAssertEqual(bodies.count, 2)
+        XCTAssertEqual(bodies.first?["country"] as? String, "SE")
+        XCTAssertNil(bodies.last?["country"], "unset leaves the account's country")
+    }
+
+    func testActionPlanUppercasesCountry() async throws {
+        var sent: String?
+        let client = try makeClient { request in
+            if let data = Self.body(of: request),
+               let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
+                sent = body["country"] as? String
+            }
+            return self.mockResponse(json: ["audience": "parent", "steps": ["Invented step"], "tone": "calm"])
+        }
+        _ = try await client.getActionPlan(GetActionPlanInput(situation: "Invented situation", country: " se "))
+
+        XCTAssertEqual(sent, "SE")
+    }
+
+    func testActionPlanRejectsMalformedCountryBeforeSending() async throws {
+        var requests = 0
+        let client = try makeClient { _ in
+            requests += 1
+            return self.mockResponse(json: [:])
+        }
+        for bad in ["Sweden", "S", "S1", ""] {
+            do {
+                _ = try await client.getActionPlan(GetActionPlanInput(situation: "Invented situation", country: bad))
+                XCTFail("expected a validation error for \(bad)")
+            } catch let TuteliqError.validationError(message, _) {
+                XCTAssertTrue(message.contains("country"), message)
+            }
+        }
+        XCTAssertEqual(requests, 0)
+    }
+
+    func testActionPlanGeneralGuidanceDecodes() throws {
+        let tailored: [String: Any] = ["audience": "parent", "steps": ["Invented step"], "tone": "calm"]
+        var general = tailored
+        general["general_guidance"] = true
+
+        XCTAssertEqual(try JSONDecoder().decode(ActionPlanResult.self, from: jsonData(general)).generalGuidance, true)
+        XCTAssertNil(try JSONDecoder().decode(ActionPlanResult.self, from: jsonData(tailored)).generalGuidance)
+    }
+
     // MARK: - Values the API uses
 
     func testEnumsCarryTheAPIsValues() {

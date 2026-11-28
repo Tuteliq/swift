@@ -76,6 +76,7 @@ struct ActionPlanRequest: Encodable {
     let situation: String
     var childAge: Int?
     var severity: String?
+    var country: String?
     var externalId: String?
     var customerId: String?
     var metadata: [String: AnyCodable]?
